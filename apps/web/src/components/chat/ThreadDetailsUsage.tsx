@@ -103,7 +103,7 @@ export function ThreadDetailsContext({ usage }: { readonly usage: ContextWindowS
         <UsageRow
           label="Context"
           fill={used}
-          tone={used >= 90 ? "error" : used >= 80 ? "warning" : null}
+          tone={budget.tone === "success" ? null : budget.tone}
           tick={tick}
           muted
           value={`${formatContextWindowTokens(usage.usedTokens)} / ${formatContextWindowTokens(budget.budgetTokens)}`}
