@@ -133,6 +133,7 @@ function ContextRow({
     <UsageRow
       label="Context"
       left={left}
+      tone={budget.tone === "success" ? null : budget.tone}
       muted
       className={cn(spaced && "mt-2")}
       tooltip={
@@ -159,18 +160,30 @@ function UsageRow({
   left,
   tooltip,
   value,
+  tone: toneOverride,
   muted = false,
   className,
 }: {
   readonly label: string;
   readonly left: number | null;
+  /** Replaces the default room-left thresholds. */
+  readonly tone?: "warning" | "error" | null;
   readonly tooltip: ReactNode;
   /** Replaces the percentage when there is none. */
   readonly value?: string | undefined;
   readonly muted?: boolean;
   readonly className?: string | undefined;
 }) {
-  const tone = left === null ? null : left <= 10 ? "error" : left <= 20 ? "warning" : null;
+  const tone =
+    toneOverride !== undefined
+      ? toneOverride
+      : left === null
+        ? null
+        : left <= 10
+          ? "error"
+          : left <= 20
+            ? "warning"
+            : null;
   return (
     <Tooltip>
       <TooltipTrigger
