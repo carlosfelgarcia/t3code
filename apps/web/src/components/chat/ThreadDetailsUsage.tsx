@@ -20,6 +20,7 @@ import { type ContextWindowSnapshot, formatContextWindowTokens } from "../../lib
 import { cn } from "../../lib/utils";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { contextBudget } from "./ContextWindowMeter.logic";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 
 const PACE_LABEL: Record<LimitPace, string> = {
@@ -123,12 +124,11 @@ function ContextRow({
   readonly usage: ContextWindowSnapshot;
   readonly spaced: boolean;
 }) {
-  const maxTokens = usage.maxTokens ?? null;
-  const left =
-    maxTokens !== null && usage.usedPercentage !== null
-      ? Math.round(100 - Math.max(0, Math.min(100, usage.usedPercentage)))
-      : null;
-  const used = formatContextWindowTokens(usage.usedTokens);
+  const budget = contextBudget({
+    usedTokens: usage.usedTokens,
+    maxTokens: usage.maxTokens ?? null,
+  });
+  const left = Math.round(100 - budget.usedPercentage);
   return (
     <UsageRow
       label="Context"
@@ -137,15 +137,18 @@ function ContextRow({
       className={cn(spaced && "mt-2")}
       tooltip={
         <>
-          {left !== null ? <span className="text-foreground">Context: {left}% left</span> : null}
-          <span className={left !== null ? "text-muted-foreground" : "text-foreground"}>
-            {maxTokens !== null
-              ? `${used} of ${formatContextWindowTokens(maxTokens)} tokens used`
-              : `${used} tokens used`}
+          <span className="text-foreground">Context: {left}% left</span>
+          <span className="text-muted-foreground">
+            {formatContextWindowTokens(usage.usedTokens)} of{" "}
+            {formatContextWindowTokens(budget.budgetTokens)} budget used
           </span>
+          {budget.modelWindowTokens !== null ? (
+            <span className="text-muted-foreground">
+              Model window {formatContextWindowTokens(budget.modelWindowTokens)}
+            </span>
+          ) : null}
         </>
       }
-      value={left === null ? used : undefined}
     />
   );
 }

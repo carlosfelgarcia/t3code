@@ -741,9 +741,9 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "legacy-context-window-indicator",
-    title: "Context window indicator (legacy)",
+    title: "Context budget readout",
     to: "/settings/labs",
-    searchTerms: ["composer meter usage tokens circle old"],
+    searchTerms: ["composer context window meter usage tokens"],
   },
   {
     id: "keybindings",

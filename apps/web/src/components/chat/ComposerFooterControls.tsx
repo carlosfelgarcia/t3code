@@ -287,12 +287,13 @@ export const ComposerFooterPrimaryActions = memo(function ComposerFooterPrimaryA
         <ContextWindowMeter
           usage={props.activeContextWindow}
           modelDisplayName={props.activeThreadModelDisplayName}
+          condensed={props.compact}
           onCompact={props.onCompactContext}
           compactDisabled={props.compactDisabled}
           compactDisabledReason={props.compactDisabledReason}
         />
       ) : props.reserveContextWindowMeter ? (
-        <ContextWindowMeterPlaceholder />
+        <ContextWindowMeterPlaceholder condensed={props.compact} />
       ) : null}
       <ComposerPrimaryActions
         compact={props.compact}
