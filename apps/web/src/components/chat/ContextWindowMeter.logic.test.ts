@@ -2,6 +2,7 @@ import { ProviderDriverKind, ProviderInstanceId, type ServerProvider } from "@t3
 import { describe, expect, it } from "vite-plus/test";
 import { deriveProviderInstanceEntries } from "../../providerInstances";
 import {
+  contextBudget,
   hasAvailableCompactionProvider,
   hasDismissedResumeCompaction,
   resolveContextWindowModelDisplayName,
@@ -155,5 +156,40 @@ describe("shouldReserveContextWindowMeter", () => {
         providerReportsContextWindow: null,
       }),
     ).toBe(true);
+  });
+});
+
+describe("contextBudget", () => {
+  it("measures usage against 200k, capped at the model's window, which it reports only when it differs", () => {
+    expect(contextBudget({ usedTokens: 100_000, maxTokens: 1_000_000 })).toMatchObject({
+      budgetTokens: 200_000,
+      usedPercentage: 50,
+      modelWindowTokens: 1_000_000,
+    });
+    expect(contextBudget({ usedTokens: 64_000, maxTokens: 128_000 })).toMatchObject({
+      budgetTokens: 128_000,
+      usedPercentage: 50,
+      modelWindowTokens: null,
+    });
+    expect(contextBudget({ usedTokens: 30_000, maxTokens: null })).toMatchObject({
+      budgetTokens: 200_000,
+      usedPercentage: 15,
+      modelWindowTokens: null,
+    });
+    expect(contextBudget({ usedTokens: 30_000, maxTokens: 0 })).toMatchObject({
+      budgetTokens: 200_000,
+      modelWindowTokens: null,
+    });
+    expect(contextBudget({ usedTokens: 250_000, maxTokens: 1_000_000 })).toMatchObject({
+      usedPercentage: 100,
+    });
+  });
+
+  it("turns warning at 50% of the budget and error at 80%", () => {
+    const tone = (usedTokens: number) => contextBudget({ usedTokens, maxTokens: null }).tone;
+    expect(tone(99_999)).toBe("success");
+    expect(tone(100_000)).toBe("warning");
+    expect(tone(159_999)).toBe("warning");
+    expect(tone(160_000)).toBe("error");
   });
 });

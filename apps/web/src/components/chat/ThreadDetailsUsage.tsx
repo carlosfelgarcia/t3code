@@ -20,7 +20,7 @@ import { type ContextWindowSnapshot, formatContextWindowTokens } from "../../lib
 import { cn } from "../../lib/utils";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { formatContextWindowCompactionMessage } from "./ContextWindowMeter.logic";
+import { contextBudget, formatContextWindowCompactionMessage } from "./ContextWindowMeter.logic";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 
 const PACE_LABEL: Record<LimitPace, string> = {
@@ -81,19 +81,18 @@ export function ThreadDetailsUsage({
   );
 }
 
-/** The thread's context window. The bar fills as context is used; the tick marks auto-compaction. */
+/** The thread's context against its budget. The tick marks auto-compaction when it falls inside. */
 export function ThreadDetailsContext({ usage }: { readonly usage: ContextWindowSnapshot }) {
-  const maxTokens = usage.maxTokens != null && usage.maxTokens > 0 ? usage.maxTokens : null;
-  const used =
-    maxTokens !== null && usage.usedPercentage !== null
-      ? Math.round(Math.max(0, Math.min(100, usage.usedPercentage)))
-      : null;
+  const budget = contextBudget({
+    usedTokens: usage.usedTokens,
+    maxTokens: usage.maxTokens ?? null,
+  });
+  const used = Math.round(budget.usedPercentage);
   const threshold = usage.autoCompactThreshold ?? null;
   const tick =
-    maxTokens !== null && threshold !== null && threshold > 0 && threshold < maxTokens
-      ? (threshold / maxTokens) * 100
+    threshold !== null && threshold > 0 && threshold < budget.budgetTokens
+      ? (threshold / budget.budgetTokens) * 100
       : null;
-  const usedTokens = formatContextWindowTokens(usage.usedTokens);
   return (
     <ThreadDetailsSection
       headingId="thread-details-context-heading"
@@ -104,24 +103,21 @@ export function ThreadDetailsContext({ usage }: { readonly usage: ContextWindowS
         <UsageRow
           label="Context"
           fill={used}
-          tone={used === null ? null : used >= 90 ? "error" : used >= 80 ? "warning" : null}
+          tone={used >= 90 ? "error" : used >= 80 ? "warning" : null}
           tick={tick}
           muted
-          value={
-            maxTokens !== null
-              ? `${usedTokens} / ${formatContextWindowTokens(maxTokens)}`
-              : usedTokens
-          }
-          ariaValue={used !== null ? `${used}% used` : `${usedTokens} tokens used`}
+          value={`${formatContextWindowTokens(usage.usedTokens)} / ${formatContextWindowTokens(budget.budgetTokens)}`}
+          ariaValue={`${used}% of budget used`}
           tooltip={
             <>
-              <span className="text-foreground">
-                {used !== null ? `Context: ${used}% used` : `Context: ${usedTokens} tokens used`}
+              <span className="text-foreground">Context: {used}% of budget used</span>
+              <span className="text-muted-foreground">
+                {usage.usedTokens.toLocaleString("en-US")} of{" "}
+                {budget.budgetTokens.toLocaleString("en-US")} budget tokens
               </span>
-              {maxTokens !== null ? (
+              {budget.modelWindowTokens !== null ? (
                 <span className="text-muted-foreground">
-                  {usage.usedTokens.toLocaleString("en-US")} of {maxTokens.toLocaleString("en-US")}{" "}
-                  tokens
+                  Model window {formatContextWindowTokens(budget.modelWindowTokens)}
                 </span>
               ) : null}
               {threshold !== null && threshold > 0 ? (

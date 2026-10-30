@@ -2,41 +2,51 @@ import { Button } from "../ui/button";
 import { type ContextWindowSnapshot, formatContextWindowTokens } from "~/lib/contextWindow";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import {
+  contextBudget,
   formatContextWindowCompactionMessage,
   formatContextWindowCost,
 } from "./ContextWindowMeter.logic";
 import { Minimize2Icon } from "lucide-react";
+import { cn } from "~/lib/utils";
 import { composerFloatingLayerProps } from "./composerEventScope";
 
-function formatPercentage(value: number | null): string | null {
-  if (value === null || !Number.isFinite(value)) {
-    return null;
-  }
+function formatPercentage(value: number): string {
   if (value < 10) {
     return `${value.toFixed(1).replace(/\.0$/, "")}%`;
   }
   return `${Math.round(value)}%`;
 }
 
+const TONE_TEXT_CLASS = {
+  success: "text-success-foreground",
+  warning: "text-warning-foreground",
+  error: "text-error-foreground",
+} as const;
+
+const TONE_BAR_CLASS = {
+  success: "bg-success",
+  warning: "bg-warning",
+  error: "bg-error",
+} as const;
+
 export function ContextWindowMeter(props: {
   usage: ContextWindowSnapshot;
   modelDisplayName?: string | null;
+  condensed?: boolean | undefined;
   onCompact?: (() => void) | undefined;
   compactDisabled?: boolean | undefined;
   compactDisabledReason?: string | null | undefined;
 }) {
-  const { usage, modelDisplayName, onCompact, compactDisabled, compactDisabledReason } = props;
-  const usedPercentage = formatPercentage(usage.usedPercentage);
-  const normalizedPercentage = Math.max(0, Math.min(100, usage.usedPercentage ?? 0));
-  const radius = 9.75;
-  const circumference = 2 * Math.PI * radius;
-  const dashOffset = circumference * (1 - normalizedPercentage / 100);
+  const { usage, modelDisplayName, condensed, onCompact, compactDisabled, compactDisabledReason } =
+    props;
+  const budget = contextBudget({
+    usedTokens: usage.usedTokens,
+    maxTokens: usage.maxTokens ?? null,
+  });
+  const usedPercentage = formatPercentage(budget.usedPercentage);
+  const usedOfBudget = `${formatContextWindowTokens(usage.usedTokens)}/${formatContextWindowTokens(budget.budgetTokens)}`;
   const totalProcessedTokens = usage.totalProcessedTokens ?? null;
   const showTotalProcessed = totalProcessedTokens !== null && totalProcessedTokens > 0;
-  const isOverloaded = normalizedPercentage > 90;
-  const usageColor = isOverloaded
-    ? "var(--color-error)"
-    : "color-mix(in oklab, var(--color-muted-foreground) 72%, transparent)";
 
   return (
     <Popover>
@@ -46,42 +56,12 @@ export function ContextWindowMeter(props: {
         closeDelay={onCompact ? 150 : 0}
         render={
           <Button
-            size="icon-sm"
+            size="xs"
             variant="ghost-muted"
-            className="size-7"
-            aria-label={
-              usage.maxTokens !== null && usedPercentage
-                ? `Context window ${usedPercentage} used`
-                : `Context window ${formatContextWindowTokens(usage.usedTokens)} tokens used`
-            }
+            aria-label={`Context budget ${usedPercentage} used`}
           >
-            <span className="relative flex size-5 items-center justify-center">
-              <svg
-                viewBox="0 0 24 24"
-                className="-rotate-90 absolute inset-0 size-full transform-gpu mx-0!"
-                aria-hidden="true"
-              >
-                <circle
-                  cx="12"
-                  cy="12"
-                  r={radius}
-                  fill="none"
-                  className="stroke-muted-foreground/24"
-                  strokeWidth="3"
-                />
-                <circle
-                  cx="12"
-                  cy="12"
-                  r={radius}
-                  fill="none"
-                  stroke={usageColor}
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeDasharray={circumference}
-                  strokeDashoffset={dashOffset}
-                  className="transition-[stroke-dashoffset,stroke] duration-500 ease-out motion-reduce:transition-none"
-                />
-              </svg>
+            <span className={cn("tabular-nums", TONE_TEXT_CLASS[budget.tone])}>
+              {condensed ? usedPercentage : `${usedOfBudget} (${usedPercentage})`}
             </span>
           </Button>
         }
@@ -97,35 +77,35 @@ export function ContextWindowMeter(props: {
       >
         <div className="flex flex-col gap-2 p-(--floating-content-inset)">
           <div className="flex items-center justify-between gap-3">
-            <div className="font-medium text-muted-foreground text-xs">Context Window</div>
-            {usage.maxTokens !== null && usedPercentage ? (
-              <div className="text-secondary-label text-2xs tabular-nums">
-                <span>{usedPercentage}</span>
-                <span className="mx-1">·</span>
-                <span>
-                  {formatContextWindowTokens(usage.usedTokens)}/
-                  {formatContextWindowTokens(usage.maxTokens ?? null)}
-                </span>
-              </div>
-            ) : (
-              <div className="text-secondary-label text-2xs tabular-nums">
-                {formatContextWindowTokens(usage.usedTokens)}
-              </div>
-            )}
+            <div className="font-medium text-muted-foreground text-xs">Context budget</div>
+            <div className="text-secondary-label text-2xs tabular-nums">
+              <span>{usedPercentage}</span>
+              <span className="mx-1">·</span>
+              <span>{usedOfBudget}</span>
+            </div>
           </div>
-          {usage.maxTokens !== null ? (
+          <div
+            className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(budget.usedPercentage)}
+            aria-label="Context budget usage"
+          >
             <div
-              className="h-1.5 w-full overflow-hidden rounded-full bg-muted/60"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(normalizedPercentage)}
-              aria-label="Context window usage"
-            >
-              <div
-                className="h-full rounded-full transition-[width,background-color] duration-500 ease-out motion-reduce:transition-none"
-                style={{ width: `${normalizedPercentage}%`, backgroundColor: usageColor }}
-              />
+              className={cn(
+                "h-full rounded-full transition-[width,background-color] duration-500 ease-out motion-reduce:transition-none",
+                TONE_BAR_CLASS[budget.tone],
+              )}
+              style={{ width: `${budget.usedPercentage}%` }}
+            />
+          </div>
+          {budget.modelWindowTokens !== null ? (
+            <div className="flex items-center justify-between gap-3 text-2xs leading-4">
+              <span className="text-secondary-label">Model window</span>
+              <span className="font-medium tabular-nums text-secondary-label">
+                {formatContextWindowTokens(budget.modelWindowTokens)}
+              </span>
             </div>
           ) : null}
           {showTotalProcessed ? (
@@ -174,6 +154,10 @@ export function ContextWindowMeter(props: {
   );
 }
 
-export function ContextWindowMeterPlaceholder() {
-  return <span aria-hidden="true" className="size-7 shrink-0" />;
+export function ContextWindowMeterPlaceholder(props: { condensed?: boolean | undefined }) {
+  return (
+    <Button size="xs" variant="ghost-muted" aria-hidden="true" tabIndex={-1} className="invisible">
+      <span className="tabular-nums">{props.condensed ? "00%" : "000k/200k (00%)"}</span>
+    </Button>
+  );
 }
