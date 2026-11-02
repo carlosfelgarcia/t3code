@@ -261,6 +261,20 @@ server, but the host's own site will not show them, and the count reads **viewed
 On mobile, open a changed file and mark it viewed from its header. Viewed files collapse,
 and their marks follow the same rules as on web and desktop.
 
+## Issues
+
+The **Issues** button, next to **Pull requests** at the bottom of the sidebar, lists GitHub issues
+from the repositories behind your projects, across your connected environments. A fork lists
+both its upstream repository and your own. Issues currently
+support GitHub only; projects on other hosts do not appear. Filter by repository, state, and label,
+or search titles. With more than one environment connected, choose which one reads the list; it
+uses that environment's GitHub credentials.
+
+Open an issue to read its description and comments. You can add and remove labels; if GitHub
+refuses the change, the label goes back and T3 Code says why. **Start thread** opens a draft in the
+issue's project with the issue's number, title, and link in the composer. Nothing is sent until
+you send it, and the agent reads the rest of the issue itself. Issues are web and desktop only.
+
 ## Troubleshooting
 
 - **Not authenticated:** run the provider's login command on the server, then rescan. For Bitbucket,

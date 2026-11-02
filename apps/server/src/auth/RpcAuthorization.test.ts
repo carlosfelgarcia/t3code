@@ -51,6 +51,18 @@ describe("RPC authorization scopes", () => {
     );
   });
 
+  it("lets thread readers browse issues but needs source control write to change their labels", () => {
+    for (const method of [
+      WS_METHODS.issuesList,
+      WS_METHODS.issuesDetail,
+      WS_METHODS.issuesLabelCandidates,
+      WS_METHODS.issuesInvalidate,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
+    }
+    expect(requiredScopeForRpcMethod(WS_METHODS.issuesSetLabels)).toBe(AuthSourceControlWriteScope);
+  });
+
   it("separates passive terminal observation from operations that can change a shell", () => {
     for (const method of [WS_METHODS.terminalObserve, WS_METHODS.subscribeTerminalMetadata]) {
       expect(requiredScopeForRpcMethod(method)).toBe(AuthTerminalReadScope);
