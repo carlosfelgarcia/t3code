@@ -12,7 +12,10 @@ import { PullRequestCandidatePicker } from "./PullRequestCandidatePicker";
 import { readableFailure } from "./pullRequestDetail.logic";
 import { pullRequestLabelColor } from "./pullRequestList.logic";
 
-function matches(candidate: PullRequestLabelCandidate, query: string): boolean {
+export function labelCandidateMatches(
+  candidate: PullRequestLabelCandidate,
+  query: string,
+): boolean {
   if (query.length === 0) return true;
   const needle = query.toLowerCase();
   return (
@@ -42,7 +45,7 @@ export function PullRequestLabelPicker({
   });
 
   const candidates = (candidatesQuery.data?.candidates ?? []).filter((entry) =>
-    matches(entry, query),
+    labelCandidateMatches(entry, query),
   );
 
   const toggle = async (candidate: PullRequestLabelCandidate) => {
@@ -91,27 +94,29 @@ export function PullRequestLabelPicker({
       disabled={pending !== null}
       onSelect={(candidate) => void toggle(candidate)}
     >
-      {(candidate) => {
-        const dot = pullRequestLabelColor(candidate.color);
-        return (
-          <>
-            <span
-              aria-hidden
-              className="size-2 shrink-0 rounded-full bg-muted-foreground"
-              {...(dot ? { style: { backgroundColor: dot } } : {})}
-            />
-            <span className="min-w-0 flex-1 truncate">
-              {candidate.name}
-              {candidate.description ? (
-                <span className="text-muted-foreground"> · {candidate.description}</span>
-              ) : null}
-            </span>
-            {candidate.isApplied ? (
-              <CheckIcon aria-label="Applied" className="size-3.5 shrink-0" />
-            ) : null}
-          </>
-        );
-      }}
+      {(candidate) => <LabelCandidateRow candidate={candidate} />}
     </PullRequestCandidatePicker>
+  );
+}
+
+export function LabelCandidateRow({ candidate }: { candidate: PullRequestLabelCandidate }) {
+  const dot = pullRequestLabelColor(candidate.color);
+  return (
+    <>
+      <span
+        aria-hidden
+        className="size-2 shrink-0 rounded-full bg-muted-foreground"
+        {...(dot ? { style: { backgroundColor: dot } } : {})}
+      />
+      <span className="min-w-0 flex-1 truncate">
+        {candidate.name}
+        {candidate.description ? (
+          <span className="text-muted-foreground"> · {candidate.description}</span>
+        ) : null}
+      </span>
+      {candidate.isApplied ? (
+        <CheckIcon aria-label="Applied" className="size-3.5 shrink-0" />
+      ) : null}
+    </>
   );
 }

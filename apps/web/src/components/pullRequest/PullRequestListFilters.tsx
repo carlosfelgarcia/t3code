@@ -98,11 +98,15 @@ export function PullRequestSearchInput({
   busy,
   onChange,
   onSubmit,
+  placeholder = "Search pull requests, or label:bug",
+  label = "Search pull requests",
 }: {
   value: string;
   busy?: boolean;
   onChange: (value: string) => void;
   onSubmit: (value: string) => void;
+  placeholder?: string;
+  label?: string;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   return (
@@ -127,8 +131,8 @@ export function PullRequestSearchInput({
             onSubmit(event.currentTarget.value);
           }
         }}
-        placeholder="Search pull requests, or label:bug"
-        aria-label="Search pull requests"
+        placeholder={placeholder}
+        aria-label={label}
       />
     </InputGroup>
   );

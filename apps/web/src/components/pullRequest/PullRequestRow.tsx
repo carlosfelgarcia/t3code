@@ -31,7 +31,11 @@ const LABEL_SLOTS = [
   { overflow: "" },
 ] as const;
 
-function PullRequestRowLabels({ labels }: { labels: EnvironmentPullRequestEntry["labels"] }) {
+export function PullRequestRowLabels({
+  labels,
+}: {
+  labels: EnvironmentPullRequestEntry["labels"];
+}) {
   if (labels.length === 0) return null;
   return (
     <span className="flex min-w-0 items-center gap-1">

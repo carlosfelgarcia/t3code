@@ -1,4 +1,11 @@
 import type {
+  IssueDetail,
+  IssueLabelChangeInput,
+  IssueListState,
+  IssueOperationError,
+  IssueRef,
+  IssueSummary,
+  PullRequestLabelCandidateList,
   SourceControlAppAccess,
   SourceControlProviderKind,
   SourceControlSignInError,
@@ -46,6 +53,33 @@ export interface SourceControlSignIn {
   ) => Effect.Effect<SourceControlAppAccess["status"]>;
 }
 
+export interface SourceControlIssueListInput {
+  readonly host: string;
+  /** `owner/name` selectors, all on `host`. */
+  readonly repositories: ReadonlyArray<string>;
+  readonly state: IssueListState;
+  readonly labels: ReadonlyArray<string>;
+  readonly query: string | undefined;
+  readonly page: number;
+  readonly perPage: number;
+}
+
+/** Issue reads and label edits. Only GitHub has them; there is no shared issue abstraction. */
+export interface SourceControlIssues {
+  /** Most recently updated first. Never includes pull requests. */
+  readonly list: (
+    input: SourceControlIssueListInput,
+  ) => Effect.Effect<
+    { readonly issues: ReadonlyArray<IssueSummary>; readonly hasMore: boolean },
+    IssueOperationError
+  >;
+  readonly detail: (ref: IssueRef) => Effect.Effect<IssueDetail, IssueOperationError>;
+  readonly labelCandidates: (
+    ref: IssueRef,
+  ) => Effect.Effect<PullRequestLabelCandidateList, IssueOperationError>;
+  readonly setLabels: (input: IssueLabelChangeInput) => Effect.Effect<void, IssueOperationError>;
+}
+
 export interface SourceControlDriverInstance {
   readonly sourceControl: SourceControlProvider.SourceControlProvider["Service"];
   readonly discovery: SourceControlProviderDiscoverySpec;
@@ -65,6 +99,7 @@ export interface SourceControlDriverInstance {
   readonly signIn?: SourceControlSignIn;
   /** Whether the server's account on `host` starred `repository` (`owner/name`). */
   readonly isRepositoryStarred?: (host: string, repository: string) => Effect.Effect<boolean>;
+  readonly issues?: SourceControlIssues;
 }
 
 /** What the server gives every driver. A driver builds anything else it needs itself. */
