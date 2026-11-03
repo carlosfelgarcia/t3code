@@ -155,6 +155,19 @@ export function effectiveIssueAuthor(
   return setting === "active-account" ? activeGithubLogin(providers) : setting.login;
 }
 
+/** True when the default is the active gh account but the environment has none signed in. */
+export function issueActiveAccountMissing(
+  urlAuthor: string | undefined,
+  setting: IssueDefaultAuthor,
+  providers: IssueAuthorProviders,
+): boolean {
+  return (
+    urlAuthor === undefined &&
+    setting === "active-account" &&
+    activeGithubLogin(providers) === undefined
+  );
+}
+
 /** True when the server listed issues without the author filter it was asked for. */
 export function issueAuthorIgnored(
   author: string | undefined,

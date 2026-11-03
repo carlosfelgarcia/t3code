@@ -52,6 +52,7 @@ import { IssueDetailPanel } from "./IssueDetailPanel";
 import { IssueStateGlyph } from "./IssueStateGlyph";
 import {
   effectiveIssueAuthor,
+  issueActiveAccountMissing,
   ISSUE_AUTHOR_ALL,
   issueAuthorIgnored,
   issueAuthorOptions,
@@ -266,6 +267,11 @@ export function IssuesPage() {
     }
     return (
       <div className="flex flex-col">
+        {issueActiveAccountMissing(search.author, defaultAuthor, providers) ? (
+          <p className="px-3 py-2 text-xs text-muted-foreground">
+            No active gh account is signed in on this environment, so Issues lists all authors.
+          </p>
+        ) : null}
         {pageInputs.map((input, index) =>
           input === null ? null : (
             <IssueListPage

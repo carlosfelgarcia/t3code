@@ -274,7 +274,8 @@ The author menu lists the GitHub accounts signed in to `gh` on the environment t
 list, active or not. To add a second account, run `gh auth login` for it, then
 `gh auth switch` back to the account that machine normally uses.
 
-Issues opens filtered to the active `gh` account on the environment that reads the list. Change
+Issues opens filtered to the active `gh` account on the environment that reads the list, or lists
+all authors and says so when no active account is signed in there. Change
 that in **Settings → Source control → Default issue author**: the active account, a fixed login, or
 all authors. Each environment keeps its own default, and an author picked on the page lasts until
 you leave Issues. An environment running an older T3 Code cannot filter by author; Issues says so

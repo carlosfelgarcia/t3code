@@ -7,6 +7,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   effectiveIssueAuthor,
+  issueActiveAccountMissing,
   ISSUE_AUTHOR_ALL,
   issueAuthorIgnored,
   issueAuthorOptions,
@@ -203,6 +204,7 @@ describe("effectiveIssueAuthor", () => {
         },
       ],
       expected: undefined,
+      missingActiveAccount: true,
     },
     {
       name: "defaults to a fixed login",
@@ -232,8 +234,9 @@ describe("effectiveIssueAuthor", () => {
       providers,
       expected: undefined,
     },
-  ])("$name", ({ urlAuthor, setting, providers, expected }) => {
+  ])("$name", ({ urlAuthor, setting, providers, expected, missingActiveAccount = false }) => {
     expect(effectiveIssueAuthor(urlAuthor, setting, providers)).toBe(expected);
+    expect(issueActiveAccountMissing(urlAuthor, setting, providers)).toBe(missingActiveAccount);
   });
 
   it("notices a server too old to filter by author", () => {
