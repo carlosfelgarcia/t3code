@@ -1,6 +1,12 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import type { IssueRef, IssueRepository, IssueSummary, PullRequestLabel } from "@t3tools/contracts";
+import type {
+  IssueRef,
+  IssueRepository,
+  IssueSummary,
+  PullRequestLabel,
+  SourceControlProviderDiscoveryItem,
+} from "@t3tools/contracts";
 
 type IssueProject = Pick<EnvironmentProject, "isScratch" | "repositoryIdentity">;
 
@@ -87,4 +93,42 @@ export function issueRowLabels(
   edit: IssueLabelEdit | undefined,
 ): ReadonlyArray<PullRequestLabel> {
   return edit !== undefined && issue.updatedAt <= edit.staleUpdatedAt ? edit.labels : issue.labels;
+}
+
+export interface IssueAuthorOption {
+  readonly value: string;
+  readonly label: string;
+}
+
+/**
+ * All, then every GitHub login signed in on the environment, A–Z. An author from the URL stays
+ * listed (in its own casing, so it matches the selection) even when it is not an account.
+ * Empty when there is nothing to offer.
+ */
+export function issueAuthorOptions(
+  providers: ReadonlyArray<{
+    readonly kind: SourceControlProviderDiscoveryItem["kind"];
+    readonly auth: Pick<SourceControlProviderDiscoveryItem["auth"], "accounts">;
+  }>,
+  author: string | undefined,
+): ReadonlyArray<IssueAuthorOption> {
+  const byKey = new Map<string, string>();
+  const logins = [
+    ...(author === undefined ? [] : [author]),
+    ...providers.flatMap((provider) =>
+      provider.kind === "github"
+        ? (provider.auth.accounts ?? []).map(({ account }) => account)
+        : [],
+    ),
+  ];
+  for (const login of logins) {
+    if (!byKey.has(login.toLowerCase())) byKey.set(login.toLowerCase(), login);
+  }
+  if (byKey.size === 0) return [];
+  return [
+    { value: "", label: "All" },
+    ...[...byKey.entries()]
+      .toSorted(([left], [right]) => left.localeCompare(right))
+      .map(([, login]) => ({ value: login, label: login })),
+  ];
 }
