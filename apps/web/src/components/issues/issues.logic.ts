@@ -1,6 +1,8 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import type {
+  IssueDefaultAuthor,
+  IssueListResult,
   IssueRef,
   IssueRepository,
   IssueSummary,
@@ -131,4 +133,30 @@ export function issueAuthorOptions(
       .toSorted(([left], [right]) => left.localeCompare(right))
       .map(([, login]) => ({ value: login, label: login })),
   ];
+}
+
+/** The URL's `author` when All was picked on the page, so the default does not come back. */
+export const ISSUE_AUTHOR_ALL = "*";
+
+/** Who to filter by: what was picked on the page, else the environment's default. */
+export function effectiveIssueAuthor(
+  urlAuthor: string | undefined,
+  setting: IssueDefaultAuthor,
+  providers: Parameters<typeof issueAuthorOptions>[0],
+): string | undefined {
+  if (urlAuthor === ISSUE_AUTHOR_ALL) return undefined;
+  if (urlAuthor !== undefined) return urlAuthor;
+  if (setting === "all") return undefined;
+  if (setting !== "active-account") return setting.login;
+  return providers
+    .flatMap((provider) => (provider.kind === "github" ? (provider.auth.accounts ?? []) : []))
+    .find((account) => account.active && account.authenticated)?.account;
+}
+
+/** True when the server listed issues without the author filter it was asked for. */
+export function issueAuthorIgnored(
+  author: string | undefined,
+  result: Pick<IssueListResult, "author">,
+): boolean {
+  return author !== undefined && result.author === undefined;
 }

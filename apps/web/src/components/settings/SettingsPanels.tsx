@@ -21,6 +21,7 @@ import {
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   type ResponseStreamingMode,
   type QuitConfirmationMode,
+  SidebarInboxOrder,
   SidebarProjectSortOrder,
 } from "@t3tools/contracts/settings";
 import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
@@ -126,6 +127,11 @@ const SIDEBAR_PROJECT_SORT_ORDER_LABELS: Record<SidebarProjectSortOrder, string>
   manual: "Manual",
 };
 const isSidebarProjectSortOrder = Schema.is(SidebarProjectSortOrder);
+const SIDEBAR_INBOX_ORDER_LABELS: Record<SidebarInboxOrder, string> = {
+  "newest-first": "Newest first",
+  "first-come": "First come, first served",
+};
+const isSidebarInboxOrder = Schema.is(SidebarInboxOrder);
 
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
@@ -483,6 +489,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
       ? ["Working section"]
       : []),
+    ...(settings.sidebarInboxOrder !== DEFAULT_UNIFIED_SETTINGS.sidebarInboxOrder
+      ? ["Inbox order"]
+      : []),
     ...(settings.sidebarAutoSettleAfterDays !== DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays
       ? ["Auto-settle inactive threads"]
       : []),
@@ -649,6 +658,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
+      sidebarInboxOrder: DEFAULT_UNIFIED_SETTINGS.sidebarInboxOrder,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
       sidebarAutoSettleOnMerge: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleOnMerge,
@@ -902,6 +912,44 @@ export function GeneralSettingsPanel() {
               }
               aria-label="Working section"
             />
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("inbox-order")}
+          description={
+            settings.sidebarWorkingShelfEnabled
+              ? "Where a thread that needs you lands in the inbox. First come, first served keeps the thread that has waited longest on top."
+              : "Turn on the Working section to choose an inbox order. Without it, the inbox keeps the order you drag threads into."
+          }
+          resetAction={
+            settings.sidebarInboxOrder !== DEFAULT_UNIFIED_SETTINGS.sidebarInboxOrder ? (
+              <SettingResetButton
+                label="inbox order"
+                onClick={() =>
+                  updateSettings({ sidebarInboxOrder: DEFAULT_UNIFIED_SETTINGS.sidebarInboxOrder })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              disabled={!settings.sidebarWorkingShelfEnabled}
+              value={settings.sidebarInboxOrder}
+              onValueChange={(value) => {
+                if (isSidebarInboxOrder(value)) updateSettings({ sidebarInboxOrder: value });
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-52" aria-label="Inbox order">
+                <SelectValue>{SIDEBAR_INBOX_ORDER_LABELS[settings.sidebarInboxOrder]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {SidebarInboxOrder.literals.map((order) => (
+                  <SelectItem hideIndicator key={order} value={order}>
+                    {SIDEBAR_INBOX_ORDER_LABELS[order]}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
           }
         />
       </SettingsSection>

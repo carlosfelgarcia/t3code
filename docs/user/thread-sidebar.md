@@ -145,6 +145,10 @@ choice.
 While this is on, the active list is ordered by when each thread last came back to you, so you
 cannot drag or move threads within it. Your saved order returns when you turn it off.
 
+On web and desktop, **Settings → General → Inbox order** chooses where a returning thread lands.
+**Newest first** puts it on top. **First come, first served** puts it at the bottom, so the
+thread that has waited longest stays on top until you reply, settle, or snooze it.
+
 ### Group threads by project (beta)
 
 Turn on **Settings → Labs → Boring sidebar (group by project)** on web and desktop to put active

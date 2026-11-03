@@ -131,6 +131,7 @@ export const make = Effect.gen(function* () {
       issues,
       hasMore: reads.some(({ result }) => result._tag === "Success" && result.success.hasMore),
       errors: failures.map(({ host, error }) => ({ host, message: error.message })),
+      ...(key.author === null ? {} : { author: key.author }),
     } satisfies IssueListResult;
   });
 

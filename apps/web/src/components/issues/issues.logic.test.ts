@@ -6,6 +6,9 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  effectiveIssueAuthor,
+  ISSUE_AUTHOR_ALL,
+  issueAuthorIgnored,
   issueAuthorOptions,
   issueRepositories,
   issueRowLabels,
@@ -156,5 +159,86 @@ describe("issueAuthorOptions", () => {
     },
   ])("$name", ({ providers, author, expected }) => {
     expect(issueAuthorOptions(providers, author)).toEqual(expected);
+  });
+});
+
+describe("effectiveIssueAuthor", () => {
+  const providers = [
+    {
+      kind: SourceControlProviderKind.make("github"),
+      auth: {
+        accounts: [
+          { host: "github.com", account: "OdCgarcia", active: false, authenticated: true },
+          { host: "github.com", account: "carlosfelgarcia", active: true, authenticated: true },
+        ],
+      },
+    },
+  ];
+
+  it.each([
+    {
+      name: "defaults to the active gh account",
+      urlAuthor: undefined,
+      setting: "active-account" as const,
+      providers,
+      expected: "carlosfelgarcia",
+    },
+    {
+      name: "lists everyone when the active account is signed out",
+      urlAuthor: undefined,
+      setting: "active-account" as const,
+      providers: [
+        {
+          kind: SourceControlProviderKind.make("github"),
+          auth: {
+            accounts: [
+              {
+                host: "github.com",
+                account: "carlosfelgarcia",
+                active: true,
+                authenticated: false,
+              },
+            ],
+          },
+        },
+      ],
+      expected: undefined,
+    },
+    {
+      name: "defaults to a fixed login",
+      urlAuthor: undefined,
+      setting: { login: "OdCgarcia" },
+      providers,
+      expected: "OdCgarcia",
+    },
+    {
+      name: "has no default when the setting is All",
+      urlAuthor: undefined,
+      setting: "all" as const,
+      providers,
+      expected: undefined,
+    },
+    {
+      name: "lets an author picked on the page win over the default",
+      urlAuthor: "OdCgarcia",
+      setting: "active-account" as const,
+      providers,
+      expected: "OdCgarcia",
+    },
+    {
+      name: "keeps All picked on the page instead of falling back to the default",
+      urlAuthor: ISSUE_AUTHOR_ALL,
+      setting: { login: "OdCgarcia" },
+      providers,
+      expected: undefined,
+    },
+  ])("$name", ({ urlAuthor, setting, providers, expected }) => {
+    expect(effectiveIssueAuthor(urlAuthor, setting, providers)).toBe(expected);
+  });
+
+  it("notices a server too old to filter by author", () => {
+    expect(issueAuthorIgnored("OdCgarcia", {})).toBe(true);
+    expect(issueAuthorIgnored("OdCgarcia", { author: "OdCgarcia" })).toBe(false);
+    expect(issueAuthorIgnored(undefined, {})).toBe(false);
   });
 });

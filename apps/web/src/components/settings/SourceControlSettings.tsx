@@ -36,6 +36,7 @@ import { SourceControlAppSignInSettings } from "./SourceControlAppSignInSettings
 import { SourceControlTokenSettings } from "./SourceControlTokenSettings";
 import { RedactedSensitiveText } from "./RedactedSensitiveText";
 import { SourceControlWritingSettingsSection } from "./SourceControlWritingSettings";
+import { IssueDefaultAuthorSettingsSection } from "./IssueDefaultAuthorSettings";
 import {
   SettingsPageContainer,
   SettingsSearchTarget,
@@ -522,6 +523,9 @@ export function SourceControlSettingsPanel() {
       )}
 
       <SourceControlWritingSettingsSection />
+      {environmentId === null ? null : (
+        <IssueDefaultAuthorSettingsSection providers={result.sourceControlProviders} />
+      )}
     </SettingsPageContainer>
   );
 }

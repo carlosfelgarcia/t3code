@@ -66,6 +66,14 @@ export const DEFAULT_SIDEBAR_PROJECT_SORT_ORDER: SidebarProjectSortOrder = "upda
 export const SidebarThreadSortOrder = Schema.Literals(["updated_at", "created_at"]);
 export type SidebarThreadSortOrder = typeof SidebarThreadSortOrder.Type;
 const DEFAULT_SIDEBAR_THREAD_SORT_ORDER: SidebarThreadSortOrder = "updated_at";
+/** Who the Issues view filters by when the page has no author picked. */
+export const IssueDefaultAuthor = Schema.Union([
+  Schema.Literals(["active-account", "all"]),
+  Schema.Struct({ login: TrimmedNonEmptyString }),
+]);
+export type IssueDefaultAuthor = typeof IssueDefaultAuthor.Type;
+export const SidebarInboxOrder = Schema.Literals(["newest-first", "first-come"]);
+export type SidebarInboxOrder = typeof SidebarInboxOrder.Type;
 
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
@@ -490,6 +498,9 @@ export const ClientSettingsSchema = Schema.Struct({
   // the boring sidebar; the boring sidebar toggle clears it.
   legacySidebarEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarWorkingShelfEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  sidebarInboxOrder: SidebarInboxOrder.pipe(
+    Schema.withDecodingDefault(Effect.succeed<SidebarInboxOrder>("newest-first")),
+  ),
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
   ),
@@ -1335,6 +1346,9 @@ export const ServerSettings = Schema.Struct({
   sourceControlWritingStyle: SourceControlWritingStyleSetting.pipe(
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
+  issueDefaultAuthor: IssueDefaultAuthor.pipe(
+    Schema.withDecodingDefault(Effect.succeed<IssueDefaultAuthor>("active-account")),
+  ),
   sourceControlWriterModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),
   ),
@@ -1685,6 +1699,7 @@ export const ServerSettingsPatch = Schema.Struct({
     }),
   ),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
+  issueDefaultAuthor: Schema.optionalKey(IssueDefaultAuthor),
   reviewGuidesEnabled: Schema.optionalKey(Schema.Boolean),
   reviewGuideModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   reviewGuideInstructions: Schema.optionalKey(TrimmedString),
@@ -1817,6 +1832,7 @@ export const ClientSettingsPatch = Schema.Struct({
   threadDetailsItems: Schema.optionalKey(Schema.Record(Schema.String, Schema.Boolean)),
   legacySidebarEnabled: Schema.optionalKey(Schema.Boolean),
   sidebarWorkingShelfEnabled: Schema.optionalKey(Schema.Boolean),
+  sidebarInboxOrder: Schema.optionalKey(SidebarInboxOrder),
   sidebarProjectGroupingMode: Schema.optionalKey(SidebarProjectGroupingMode),
   sidebarProjectGroupingOverrides: Schema.optionalKey(
     Schema.Record(TrimmedNonEmptyString, SidebarProjectGroupingMode),

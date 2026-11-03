@@ -64,6 +64,8 @@ export const IssueListResult = Schema.Struct({
   hasMore: Schema.Boolean,
   /** Hosts that could not be read; the issues from the others still list. */
   errors: Schema.Array(IssueListHostError),
+  /** The author filter applied. Servers older than the filter drop it, so this is missing. */
+  author: Schema.optional(TrimmedNonEmptyString),
 });
 export type IssueListResult = typeof IssueListResult.Type;
 

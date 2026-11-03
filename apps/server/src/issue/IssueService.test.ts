@@ -114,6 +114,7 @@ it.effect("lists each repository once and merges hosts, newest update first", ()
     ]);
     expect(result.hasMore).toBe(true);
     expect(result.errors).toEqual([]);
+    expect(result.author).toBe("OdCgarcia");
   }),
 );
 

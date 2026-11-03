@@ -454,6 +454,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["hide fold running monitoring threads inbox sidebar shelf"],
   },
   {
+    id: "inbox-order",
+    title: "Inbox order",
+    to: "/settings/general",
+    searchTerms: ["queue first come first served oldest newest attention sort threads sidebar"],
+  },
+  {
     id: "boring-sidebar",
     title: "Boring sidebar (group by project)",
     to: "/settings/labs",
@@ -964,6 +970,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/source-control",
     scope: "project-defaults",
     searchTerms: ["pull request merge squash rebase last selected"],
+  },
+  {
+    id: "issue-default-author",
+    title: "Default issue author",
+    to: "/settings/source-control",
+    scope: "environment-defaults",
+    searchTerms: ["issues author filter github gh account active login mine"],
   },
   {
     id: "source-control",

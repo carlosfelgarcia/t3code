@@ -50,6 +50,9 @@ import { PullRequestRowLabels } from "../pullRequest/PullRequestRow";
 import { IssueDetailPanel } from "./IssueDetailPanel";
 import { IssueStateGlyph } from "./IssueStateGlyph";
 import {
+  effectiveIssueAuthor,
+  ISSUE_AUTHOR_ALL,
+  issueAuthorIgnored,
   issueAuthorOptions,
   type IssueLabelEdit,
   issueKey,
@@ -64,7 +67,7 @@ export interface IssuesSearch {
   readonly labels?: ReadonlyArray<string>;
   /** Repository filter, as `host/owner/name`. */
   readonly repo?: string;
-  /** GitHub login of whoever opened the issue. */
+  /** GitHub login of whoever opened the issue, or `ISSUE_AUTHOR_ALL`. Absent: the default. */
   readonly author?: string;
   /** The environment whose GitHub credentials read the list. */
   readonly environmentId?: EnvironmentId;
@@ -121,8 +124,25 @@ export function IssuesPage() {
       ? repositories
       : repositories.filter((repository) => issueRepositoryKey(repository) === search.repo);
 
+  const discovery = useEnvironmentQuery(
+    environmentId === null
+      ? null
+      : sourceControlEnvironment.discovery({ environmentId, input: {} }),
+  );
+  const providers = discovery.data?.sourceControlProviders ?? [];
+  const defaultAuthor =
+    environments.find((environment) => environment.environmentId === environmentId)?.serverConfig
+      ?.settings.issueDefaultAuthor ?? "active-account";
+  const author = effectiveIssueAuthor(search.author, defaultAuthor, providers);
+  // Without this wait, the first read would list everyone and then refetch for the account.
+  const authorPending =
+    search.author === undefined &&
+    defaultAuthor === "active-account" &&
+    discovery.data === null &&
+    discovery.error === null;
+
   const baseInput: IssueListInput | null =
-    scopedRepositories.length === 0
+    scopedRepositories.length === 0 || authorPending
       ? null
       : {
           repositories: scopedRepositories,
@@ -131,7 +151,7 @@ export function IssuesPage() {
             ? {}
             : { labels: search.labels }),
           ...(search.q === undefined ? {} : { query: search.q }),
-          ...(search.author === undefined ? {} : { author: search.author }),
+          ...(author === undefined ? {} : { author }),
         };
   const listKey = JSON.stringify([environmentId, baseInput]);
   const [loaded, setLoaded] = useState({ key: listKey, pages: 1 });
@@ -143,11 +163,6 @@ export function IssuesPage() {
     environmentId === null || pageInputs[0] == null
       ? null
       : issueEnvironment.list({ environmentId, input: pageInputs[0] }),
-  );
-  const discovery = useEnvironmentQuery(
-    environmentId === null
-      ? null
-      : sourceControlEnvironment.discovery({ environmentId, input: {} }),
   );
   const [refreshing, setRefreshing] = useState(false);
   const [labelEdits, setLabelEdits] = useState<ReadonlyMap<string, IssueLabelEdit>>(new Map());
@@ -207,10 +222,10 @@ export function IssuesPage() {
       ...(firstPage.data?.issues ?? []).flatMap((issue) => issue.labels.map(({ name }) => name)),
     ]),
   ].toSorted((left, right) => left.localeCompare(right));
-  const authorOptions = issueAuthorOptions(
-    discovery.data?.sourceControlProviders ?? [],
-    search.author,
-  ).map((option) => ({ ...option, Icon: UserIcon }));
+  const authorOptions = issueAuthorOptions(providers, author).map((option) => ({
+    ...option,
+    Icon: UserIcon,
+  }));
   const environmentOptions = capableEnvironments.map((environment) => ({
     value: environment.environmentId as string,
     label: `Read with ${environment.label}`,
@@ -238,6 +253,13 @@ export function IssuesPage() {
       ) : (
         <ListMessage>
           <Spinner aria-hidden /> Loading projects…
+        </ListMessage>
+      );
+    }
+    if (authorPending) {
+      return (
+        <ListMessage>
+          <Spinner aria-hidden /> Loading issues…
         </ListMessage>
       );
     }
@@ -320,11 +342,11 @@ export function IssuesPage() {
               <PullRequestCompactFilterMenu
                 label="Filter by author"
                 triggerIcon={<UserIcon aria-hidden className="size-4" />}
-                triggerLabel={search.author === undefined ? "Author" : `Author · ${search.author}`}
+                triggerLabel={author === undefined ? "Author" : `Author · ${author}`}
                 outlined
-                value={search.author ?? ""}
+                value={author ?? ""}
                 options={authorOptions}
-                onChange={(author) => updateSearch({ author: author === "" ? undefined : author })}
+                onChange={(next) => updateSearch({ author: next === "" ? ISSUE_AUTHOR_ALL : next })}
               />
             ) : null}
             <IssueLabelFilter
@@ -404,6 +426,13 @@ function IssueListPage({
         <Button size="sm" variant="outline" onClick={onRetry}>
           Retry
         </Button>
+      </ListMessage>
+    );
+  }
+  if (issueAuthorIgnored(input.author, result)) {
+    return (
+      <ListMessage>
+        {"This environment's T3 is too old to filter by author. Update it, or pick All."}
       </ListMessage>
     );
   }
