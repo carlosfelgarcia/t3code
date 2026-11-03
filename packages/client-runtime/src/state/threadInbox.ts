@@ -1,5 +1,5 @@
 // @effect-diagnostics globalTimers:off - Shelf placement timers run in web and native clients, outside an Effect runtime.
-import type { SidebarInboxOrder } from "@t3tools/contracts";
+import { DEFAULT_SIDEBAR_INBOX_ORDER, type SidebarInboxOrder } from "@t3tools/contracts";
 import { threadRuntimeIsActive, type EnvironmentThreadShell } from "./models.ts";
 import { toSortableTimestamp } from "./threadSort.ts";
 import { effectiveSnoozed } from "./threadSettled.ts";
@@ -39,7 +39,7 @@ type InboxThreadInput = Pick<
 export function sortInboxThreadsByReturn<T extends InboxThreadInput>(
   threads: readonly T[],
   observedReturnAt?: (thread: T) => number | undefined,
-  order: SidebarInboxOrder = "newest-first",
+  order: SidebarInboxOrder = DEFAULT_SIDEBAR_INBOX_ORDER,
 ): T[] {
   const timestamps = new Map(
     threads.map((thread) => [

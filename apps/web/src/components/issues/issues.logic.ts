@@ -97,6 +97,19 @@ export function issueRowLabels(
   return edit !== undefined && issue.updatedAt <= edit.staleUpdatedAt ? edit.labels : issue.labels;
 }
 
+type IssueAuthorProviders = ReadonlyArray<{
+  readonly kind: SourceControlProviderDiscoveryItem["kind"];
+  readonly auth: Pick<SourceControlProviderDiscoveryItem["auth"], "accounts">;
+}>;
+
+export const githubAccounts = (providers: IssueAuthorProviders) =>
+  providers.flatMap((provider) =>
+    provider.kind === "github" ? (provider.auth.accounts ?? []) : [],
+  );
+
+export const activeGithubLogin = (providers: IssueAuthorProviders) =>
+  githubAccounts(providers).find((account) => account.active && account.authenticated)?.account;
+
 export interface IssueAuthorOption {
   readonly value: string;
   readonly label: string;
@@ -108,20 +121,13 @@ export interface IssueAuthorOption {
  * Empty when there is nothing to offer.
  */
 export function issueAuthorOptions(
-  providers: ReadonlyArray<{
-    readonly kind: SourceControlProviderDiscoveryItem["kind"];
-    readonly auth: Pick<SourceControlProviderDiscoveryItem["auth"], "accounts">;
-  }>,
+  providers: IssueAuthorProviders,
   author: string | undefined,
 ): ReadonlyArray<IssueAuthorOption> {
   const byKey = new Map<string, string>();
   const logins = [
     ...(author === undefined ? [] : [author]),
-    ...providers.flatMap((provider) =>
-      provider.kind === "github"
-        ? (provider.auth.accounts ?? []).map(({ account }) => account)
-        : [],
-    ),
+    ...githubAccounts(providers).map(({ account }) => account),
   ];
   for (const login of logins) {
     if (!byKey.has(login.toLowerCase())) byKey.set(login.toLowerCase(), login);
@@ -138,19 +144,15 @@ export function issueAuthorOptions(
 /** The URL's `author` when All was picked on the page, so the default does not come back. */
 export const ISSUE_AUTHOR_ALL = "*";
 
-/** Who to filter by: what was picked on the page, else the environment's default. */
 export function effectiveIssueAuthor(
   urlAuthor: string | undefined,
   setting: IssueDefaultAuthor,
-  providers: Parameters<typeof issueAuthorOptions>[0],
+  providers: IssueAuthorProviders,
 ): string | undefined {
   if (urlAuthor === ISSUE_AUTHOR_ALL) return undefined;
   if (urlAuthor !== undefined) return urlAuthor;
   if (setting === "all") return undefined;
-  if (setting !== "active-account") return setting.login;
-  return providers
-    .flatMap((provider) => (provider.kind === "github" ? (provider.auth.accounts ?? []) : []))
-    .find((account) => account.active && account.authenticated)?.account;
+  return setting === "active-account" ? activeGithubLogin(providers) : setting.login;
 }
 
 /** True when the server listed issues without the author filter it was asked for. */

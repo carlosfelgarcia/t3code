@@ -1,11 +1,12 @@
 import { RegistryContext } from "@effect/atom-react";
-import type {
-  EnvironmentId,
-  IssueListInput,
-  IssueListResult,
-  IssueListState,
-  IssueRef,
-  IssueSummary,
+import {
+  DEFAULT_SERVER_SETTINGS,
+  type EnvironmentId,
+  type IssueListInput,
+  type IssueListResult,
+  type IssueListState,
+  type IssueRef,
+  type IssueSummary,
 } from "@t3tools/contracts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
@@ -132,7 +133,7 @@ export function IssuesPage() {
   const providers = discovery.data?.sourceControlProviders ?? [];
   const defaultAuthor =
     environments.find((environment) => environment.environmentId === environmentId)?.serverConfig
-      ?.settings.issueDefaultAuthor ?? "active-account";
+      ?.settings.issueDefaultAuthor ?? DEFAULT_SERVER_SETTINGS.issueDefaultAuthor;
   const author = effectiveIssueAuthor(search.author, defaultAuthor, providers);
   // Without this wait, the first read would list everyone and then refetch for the account.
   const authorPending =

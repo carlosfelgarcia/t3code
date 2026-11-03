@@ -1,6 +1,7 @@
 import type { IssueDefaultAuthor, SourceControlProviderDiscoveryItem } from "@t3tools/contracts";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 
+import { activeGithubLogin, githubAccounts } from "../issues/issues.logic";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
@@ -20,21 +21,21 @@ const fromValue = (value: string): IssueDefaultAuthor =>
     ? value
     : { login: value.slice(LOGIN_PREFIX.length) };
 
+/** `providers` belong to one environment, so fixed logins are offered only when it is the only one in scope. */
 export function IssueDefaultAuthorSettingsSection({
   providers,
+  singleEnvironment,
 }: {
   readonly providers: ReadonlyArray<SourceControlProviderDiscoveryItem>;
+  readonly singleEnvironment: boolean;
 }) {
   const setting = useScopedSettings((settings) => settings.issueDefaultAuthor);
   const mixed = useScopedSettingsMixed(["issueDefaultAuthor"]);
   const updateSettings = useUpdateScopedSettings();
-  const accounts = providers.flatMap((provider) =>
-    provider.kind === "github" ? (provider.auth.accounts ?? []) : [],
-  );
-  const activeLogin = accounts.find((account) => account.active && account.authenticated)?.account;
+  const activeLogin = singleEnvironment ? activeGithubLogin(providers) : undefined;
   const logins = [
     ...new Set([
-      ...accounts.map(({ account }) => account),
+      ...(singleEnvironment ? githubAccounts(providers).map(({ account }) => account) : []),
       ...(typeof setting === "string" ? [] : [setting.login]),
     ]),
   ].toSorted((left, right) => left.localeCompare(right));
@@ -60,7 +61,11 @@ export function IssueDefaultAuthorSettingsSection({
         settingKeys={["issueDefaultAuthor"]}
         mixed={mixed}
         {...searchableSetting("issue-default-author")}
-        description="Who the Issues view filters by when you open it. Picking another author on the page lasts until you leave Issues."
+        description={
+          singleEnvironment
+            ? "Who the Issues view filters by when you open it. Picking another author on the page lasts until you leave Issues."
+            : "Who the Issues view filters by when you open it. Choose one environment to pick a fixed login from its gh accounts."
+        }
         resetAction={
           isDefault ? null : (
             <SettingResetButton

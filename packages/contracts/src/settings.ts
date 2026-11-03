@@ -72,8 +72,10 @@ export const IssueDefaultAuthor = Schema.Union([
   Schema.Struct({ login: TrimmedNonEmptyString }),
 ]);
 export type IssueDefaultAuthor = typeof IssueDefaultAuthor.Type;
+const DEFAULT_ISSUE_DEFAULT_AUTHOR: IssueDefaultAuthor = "active-account";
 export const SidebarInboxOrder = Schema.Literals(["newest-first", "first-come"]);
 export type SidebarInboxOrder = typeof SidebarInboxOrder.Type;
+export const DEFAULT_SIDEBAR_INBOX_ORDER: SidebarInboxOrder = "newest-first";
 
 export const SidebarProjectGroupingMode = Schema.Literals([
   "repository",
@@ -499,7 +501,7 @@ export const ClientSettingsSchema = Schema.Struct({
   legacySidebarEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   sidebarWorkingShelfEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
   sidebarInboxOrder: SidebarInboxOrder.pipe(
-    Schema.withDecodingDefault(Effect.succeed<SidebarInboxOrder>("newest-first")),
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_INBOX_ORDER)),
   ),
   sidebarProjectGroupingMode: SidebarProjectGroupingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_SIDEBAR_PROJECT_GROUPING_MODE)),
@@ -1347,7 +1349,7 @@ export const ServerSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed({})),
   ),
   issueDefaultAuthor: IssueDefaultAuthor.pipe(
-    Schema.withDecodingDefault(Effect.succeed<IssueDefaultAuthor>("active-account")),
+    Schema.withDecodingDefault(Effect.succeed(DEFAULT_ISSUE_DEFAULT_AUTHOR)),
   ),
   sourceControlWriterModelSelection: Schema.NullOr(ModelSelection).pipe(
     Schema.withDecodingDefault(Effect.succeed(null)),

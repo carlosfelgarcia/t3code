@@ -524,7 +524,10 @@ export function SourceControlSettingsPanel() {
 
       <SourceControlWritingSettingsSection />
       {environmentId === null ? null : (
-        <IssueDefaultAuthorSettingsSection providers={result.sourceControlProviders} />
+        <IssueDefaultAuthorSettingsSection
+          providers={result.sourceControlProviders}
+          singleEnvironment={!aggregate}
+        />
       )}
     </SettingsPageContainer>
   );
