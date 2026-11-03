@@ -22,6 +22,7 @@ const text = (raw: unknown) =>
 export const Route = createFileRoute("/_chat/issues")({
   validateSearch: (raw: Record<string, unknown>): IssuesSearch => {
     const repo = text(raw.repo);
+    const author = text(raw.author);
     const environmentId = text(raw.environmentId);
     const host = text(raw.host);
     const repository = text(raw.repository);
@@ -31,6 +32,7 @@ export const Route = createFileRoute("/_chat/issues")({
       q: text(raw.q),
       ...searchLabels(raw.labels),
       ...(repo === undefined ? {} : { repo }),
+      ...(author === undefined ? {} : { author }),
       ...(environmentId === undefined ? {} : { environmentId: environmentId as EnvironmentId }),
       ...(host === undefined ? {} : { host }),
       ...(repository === undefined ? {} : { repository }),

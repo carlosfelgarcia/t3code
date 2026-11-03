@@ -110,6 +110,7 @@ const searchQuery = (input: Parameters<SourceControlIssues["list"]>[0]) =>
     ...(input.state === "all" ? [] : [`state:${input.state}`]),
     ...input.repositories.map((repository) => `repo:${repository}`),
     ...input.labels.map((label) => `label:${quoted(label)}`),
+    ...(input.author === undefined ? [] : [`author:${input.author}`]),
   ].join(" ");
 
 const repositoryPath = (repository: string) =>

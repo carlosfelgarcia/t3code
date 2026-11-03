@@ -15,6 +15,7 @@ import {
   LayersIcon,
   ServerIcon,
   TagIcon,
+  UserIcon,
 } from "lucide-react";
 import { useContext, useEffect, useState } from "react";
 
@@ -24,6 +25,7 @@ import { useAllEnvironmentShellsBootstrapped, useProjects } from "~/state/entiti
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { issueEnvironment } from "~/state/issues";
 import { useEnvironmentQuery } from "~/state/query";
+import { sourceControlEnvironment } from "~/state/sourceControl";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { Button } from "../ui/button";
@@ -48,6 +50,7 @@ import { PullRequestRowLabels } from "../pullRequest/PullRequestRow";
 import { IssueDetailPanel } from "./IssueDetailPanel";
 import { IssueStateGlyph } from "./IssueStateGlyph";
 import {
+  issueAuthorOptions,
   type IssueLabelEdit,
   issueKey,
   issueRepositories,
@@ -61,6 +64,8 @@ export interface IssuesSearch {
   readonly labels?: ReadonlyArray<string>;
   /** Repository filter, as `host/owner/name`. */
   readonly repo?: string;
+  /** GitHub login of whoever opened the issue. */
+  readonly author?: string;
   /** The environment whose GitHub credentials read the list. */
   readonly environmentId?: EnvironmentId;
   readonly host?: string;
@@ -126,6 +131,7 @@ export function IssuesPage() {
             ? {}
             : { labels: search.labels }),
           ...(search.q === undefined ? {} : { query: search.q }),
+          ...(search.author === undefined ? {} : { author: search.author }),
         };
   const listKey = JSON.stringify([environmentId, baseInput]);
   const [loaded, setLoaded] = useState({ key: listKey, pages: 1 });
@@ -137,6 +143,11 @@ export function IssuesPage() {
     environmentId === null || pageInputs[0] == null
       ? null
       : issueEnvironment.list({ environmentId, input: pageInputs[0] }),
+  );
+  const discovery = useEnvironmentQuery(
+    environmentId === null
+      ? null
+      : sourceControlEnvironment.discovery({ environmentId, input: {} }),
   );
   const [refreshing, setRefreshing] = useState(false);
   const [labelEdits, setLabelEdits] = useState<ReadonlyMap<string, IssueLabelEdit>>(new Map());
@@ -196,6 +207,10 @@ export function IssuesPage() {
       ...(firstPage.data?.issues ?? []).flatMap((issue) => issue.labels.map(({ name }) => name)),
     ]),
   ].toSorted((left, right) => left.localeCompare(right));
+  const authorOptions = issueAuthorOptions(
+    discovery.data?.sourceControlProviders ?? [],
+    search.author,
+  ).map((option) => ({ ...option, Icon: UserIcon }));
   const environmentOptions = capableEnvironments.map((environment) => ({
     value: environment.environmentId as string,
     label: `Read with ${environment.label}`,
@@ -299,6 +314,17 @@ export function IssuesPage() {
                 value={search.repo ?? ""}
                 options={repositoryOptions}
                 onChange={(repo) => updateSearch({ repo: repo === "" ? undefined : repo })}
+              />
+            ) : null}
+            {authorOptions.length > 0 ? (
+              <PullRequestCompactFilterMenu
+                label="Filter by author"
+                triggerIcon={<UserIcon aria-hidden className="size-4" />}
+                triggerLabel={search.author === undefined ? "Author" : `Author · ${search.author}`}
+                outlined
+                value={search.author ?? ""}
+                options={authorOptions}
+                onChange={(author) => updateSearch({ author: author === "" ? undefined : author })}
               />
             ) : null}
             <IssueLabelFilter

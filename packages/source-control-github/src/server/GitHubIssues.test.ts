@@ -95,6 +95,7 @@ it.effect("lists issues across repositories, newest update first, without pull r
       state: "open",
       labels: ["needs triage"],
       query: "crash",
+      author: "OdCgarcia",
       page: 2,
       perPage: 50,
     });
@@ -103,7 +104,7 @@ it.effect("lists issues across repositories, newest update first, without pull r
     const url = new URL(`https://api.github.com/${calls[0]?.path}`);
     expect(url.pathname).toBe("/search/issues");
     expect(url.searchParams.get("q")).toBe(
-      'crash in:title is:issue state:open repo:acme/web repo:acme/api label:"needs triage"',
+      'crash in:title is:issue state:open repo:acme/web repo:acme/api label:"needs triage" author:OdCgarcia',
     );
     expect(url.searchParams.get("sort")).toBe("updated");
     expect(url.searchParams.get("order")).toBe("desc");

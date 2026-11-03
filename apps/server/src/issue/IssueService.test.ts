@@ -82,6 +82,7 @@ it.effect("lists each repository once and merges hosts, newest update first", ()
       state: "open",
       labels: ["bug"],
       query: "crash",
+      author: "OdCgarcia",
     });
 
     expect(listed).toEqual([
@@ -91,6 +92,7 @@ it.effect("lists each repository once and merges hosts, newest update first", ()
         state: "open",
         labels: ["bug"],
         query: "crash",
+        author: "OdCgarcia",
         page: 1,
         perPage: 50,
       },
@@ -100,6 +102,7 @@ it.effect("lists each repository once and merges hosts, newest update first", ()
         state: "open",
         labels: ["bug"],
         query: "crash",
+        author: "OdCgarcia",
         page: 1,
         perPage: 50,
       },
@@ -170,5 +173,23 @@ it.effect("reads GitHub again after a label change instead of serving the cached
     });
     yield* service.list(input);
     expect(reads).toBe(2);
+  }),
+);
+
+it.effect("reads GitHub for each author instead of sharing one cached list", () =>
+  Effect.gen(function* () {
+    let reads = 0;
+    const service = yield* makeService({
+      list: () => Effect.sync(() => (reads++, { issues: [], hasMore: false })),
+    });
+    const input = {
+      repositories: [{ host: "github.com", repository: "acme/web" }],
+      state: "open",
+    } as const;
+
+    yield* service.list({ ...input, author: "carlosfelgarcia" });
+    yield* service.list({ ...input, author: "OdCgarcia" });
+    yield* service.list(input);
+    expect(reads).toBe(3);
   }),
 );

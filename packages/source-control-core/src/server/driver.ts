@@ -60,6 +60,7 @@ export interface SourceControlIssueListInput {
   readonly state: IssueListState;
   readonly labels: ReadonlyArray<string>;
   readonly query: string | undefined;
+  readonly author: string | undefined;
   readonly page: number;
   readonly perPage: number;
 }

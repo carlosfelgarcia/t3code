@@ -33,6 +33,8 @@ export const IssueListInput = Schema.Struct({
     ),
   ),
   query: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(200))),
+  /** GitHub login of whoever opened the issue. */
+  author: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(200))),
   /** One-based page of `ISSUE_LIST_PAGE_SIZE` issues. */
   page: Schema.optional(PositiveInt),
 });

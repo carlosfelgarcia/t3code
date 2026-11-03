@@ -45,6 +45,7 @@ const ListKey = Schema.Struct({
   state: IssueListState,
   labels: Schema.Array(Schema.String),
   query: Schema.NullOr(Schema.String),
+  author: Schema.NullOr(Schema.String),
   page: Schema.Number,
 });
 type ListKey = typeof ListKey.Type;
@@ -99,6 +100,7 @@ export const make = Effect.gen(function* () {
               state: key.state,
               labels: key.labels,
               query: key.query ?? undefined,
+              author: key.author ?? undefined,
               page: key.page,
               perPage: ISSUE_LIST_PAGE_SIZE,
             }),
@@ -147,6 +149,7 @@ export const make = Effect.gen(function* () {
           state: input.state,
           labels: input.labels ?? [],
           query: input.query ?? null,
+          author: input.author ?? null,
           page: input.page ?? 1,
         }),
       );

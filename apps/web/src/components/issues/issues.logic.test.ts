@@ -5,7 +5,12 @@ import {
 } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { issueRepositories, issueRowLabels, projectsForRepository } from "./issues.logic";
+import {
+  issueAuthorOptions,
+  issueRepositories,
+  issueRowLabels,
+  projectsForRepository,
+} from "./issues.logic";
 
 const github = (
   owner: string,
@@ -79,5 +84,77 @@ describe("issueRowLabels", () => {
     expect(issueRowLabels({ ...issue, updatedAt: "2026-10-03T10:00:05Z" }, edit)).toEqual(
       issue.labels,
     );
+  });
+});
+
+describe("issueAuthorOptions", () => {
+  const account = (login: string, active = false, authenticated = true) => ({
+    host: "github.com",
+    account: login,
+    active,
+    authenticated,
+  });
+  const github = (accounts: ReadonlyArray<ReturnType<typeof account>>) => ({
+    kind: SourceControlProviderKind.make("github"),
+    auth: { accounts },
+  });
+  const all = { value: "", label: "All" };
+
+  it.each([
+    {
+      name: "lists logins once, ignoring case, A–Z after All",
+      providers: [
+        github([account("odcgarcia"), account("carlosfelgarcia", true), account("OdCgarcia")]),
+      ],
+      author: undefined,
+      expected: [
+        all,
+        { value: "carlosfelgarcia", label: "carlosfelgarcia" },
+        { value: "odcgarcia", label: "odcgarcia" },
+      ],
+    },
+    { name: "hides the menu without accounts", providers: [], author: undefined, expected: [] },
+    {
+      name: "offers All and a single account",
+      providers: [github([account("carlosfelgarcia", true)])],
+      author: undefined,
+      expected: [all, { value: "carlosfelgarcia", label: "carlosfelgarcia" }],
+    },
+    {
+      name: "includes inactive and unauthenticated accounts, and ignores other providers",
+      providers: [
+        github([account("work", false, false), account("me", true)]),
+        {
+          kind: SourceControlProviderKind.make("gitlab"),
+          auth: { accounts: [account("gitlab-me", true)] },
+        },
+      ],
+      author: undefined,
+      expected: [all, { value: "me", label: "me" }, { value: "work", label: "work" }],
+    },
+    {
+      name: "keeps an author from the URL that is not an account, in the URL's casing",
+      providers: [github([account("OdCgarcia", true)])],
+      author: "someone",
+      expected: [
+        all,
+        { value: "OdCgarcia", label: "OdCgarcia" },
+        { value: "someone", label: "someone" },
+      ],
+    },
+    {
+      name: "selects an account whose case differs from the URL",
+      providers: [github([account("OdCgarcia", true)])],
+      author: "odcgarcia",
+      expected: [all, { value: "odcgarcia", label: "odcgarcia" }],
+    },
+    {
+      name: "shows the URL author even without accounts",
+      providers: [],
+      author: "someone",
+      expected: [all, { value: "someone", label: "someone" }],
+    },
+  ])("$name", ({ providers, author, expected }) => {
+    expect(issueAuthorOptions(providers, author)).toEqual(expected);
   });
 });
