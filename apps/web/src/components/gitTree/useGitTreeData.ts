@@ -25,6 +25,8 @@ export interface GitTreeData {
   readonly refs: ReadonlyArray<VcsRef>;
   readonly pages: ReadonlyArray<GitTreePage>;
   readonly nextCursor: number | null;
+  /** Absent when the server predates reporting HEAD. */
+  readonly headHash: string | null | undefined;
 }
 
 export function gitCommandErrorDetail(error: unknown): string {
@@ -85,6 +87,7 @@ export function useGitTreeData(environmentId: EnvironmentId, cwd: string) {
       refs,
       pages: [{ commits, layout: layoutCommitGraph(commits) }],
       nextCursor: graph.value.nextCursor,
+      headHash: graph.value.headHash,
     });
     setError(null);
   };

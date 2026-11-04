@@ -1,5 +1,6 @@
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import type { VcsCommitGraphCommit } from "@t3tools/contracts";
+import { TagIcon } from "lucide-react";
 import { memo, type Ref } from "react";
 
 import { cn } from "~/lib/utils";
@@ -52,15 +53,26 @@ const GitTreeGraphRow = memo(function GitTreeGraphRow({
   item,
   width,
   head,
+  headBranch,
 }: {
   item: GitTreeGraphItem;
   width: number;
   head: boolean;
+  /** The checked-out branch, or null for a detached HEAD. */
+  headBranch: string | null;
 }) {
   const { commit, row } = item;
   const svgWidth = Math.max(width, 1) * LANE_WIDTH;
+  const branches = head ? commit.refs.filter((ref) => ref !== headBranch) : commit.refs;
   return (
-    <div className="flex h-7 items-center gap-2 pr-3 text-xs hover:bg-accent/50">
+    <div
+      className={cn(
+        "relative flex h-7 items-center gap-2 pr-3 text-xs",
+        head
+          ? "bg-primary/8 before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-primary"
+          : "hover:bg-accent/50",
+      )}
+    >
       <svg
         aria-hidden
         className="shrink-0"
@@ -86,9 +98,20 @@ const GitTreeGraphRow = memo(function GitTreeGraphRow({
           strokeWidth={head ? 2 : 0}
         />
       </svg>
-      {commit.refs.map((ref) => (
+      {head ? (
+        <Badge className="shrink-0">
+          {headBranch === null ? "HEAD (detached)" : `HEAD → ${headBranch}`}
+        </Badge>
+      ) : null}
+      {branches.map((ref) => (
         <Badge key={ref} variant="outline" className="shrink-0">
           {ref}
+        </Badge>
+      ))}
+      {commit.tags?.map((tag) => (
+        <Badge key={tag} variant="warning" className="shrink-0">
+          <TagIcon aria-hidden />
+          {tag}
         </Badge>
       ))}
       <Tooltip>
@@ -117,12 +140,14 @@ export function GitTreeGraph({
   items,
   width,
   headHash,
+  headBranch,
   listRef,
   footer,
 }: {
   items: ReadonlyArray<GitTreeGraphItem>;
   width: number;
   headHash: string | null;
+  headBranch: string | null;
   listRef: Ref<LegendListRef>;
   footer: React.ReactElement | null;
 }) {
@@ -133,7 +158,12 @@ export function GitTreeGraph({
       data={items as GitTreeGraphItem[]}
       keyExtractor={(item) => item.commit.hash}
       renderItem={({ item }) => (
-        <GitTreeGraphRow item={item} width={width} head={item.commit.hash === headHash} />
+        <GitTreeGraphRow
+          item={item}
+          width={width}
+          head={item.commit.hash === headHash}
+          headBranch={headBranch}
+        />
       )}
       estimatedItemSize={GIT_TREE_ROW_HEIGHT}
       recycleItems={false}

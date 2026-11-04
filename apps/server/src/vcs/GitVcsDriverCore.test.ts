@@ -4457,10 +4457,13 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         yield* git(cwd, ["push", "-q", "origin", "unrelated"]);
         yield* git(cwd, ["checkout", "-q", "-f", initialBranch]);
         yield* git(cwd, ["branch", "-q", "-D", "unrelated"]);
+        yield* git(cwd, ["tag", "lightweight", "feature"]);
+        yield* git(cwd, ["tag", "-a", "-m", "release", "v1.0.0", initial]);
 
         const driver = yield* GitVcsDriver.GitVcsDriver;
         const graph = yield* driver.readCommitGraph({ cwd });
         assert.equal(graph.isRepo, true);
+        assert.equal(graph.headHash, merge);
         assert.equal(graph.nextCursor, null);
         const byHash = new Map(graph.commits.map((commit) => [commit.hash, commit]));
         assert.deepEqual(
@@ -4479,6 +4482,10 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         assert.deepEqual(byHash.get(pushedTopic)?.refs, ["origin/topic"]);
         // Local branches label a commit before remote ones.
         assert.deepEqual(byHash.get(initial)?.refs, ["topic", `origin/${initialBranch}`]);
+        assert.deepEqual(byHash.get(feature)?.tags, ["lightweight"]);
+        // Annotated tags label the commit they point to, not the tag object.
+        assert.deepEqual(byHash.get(initial)?.tags, ["v1.0.0"]);
+        assert.equal(byHash.get(merge)?.tags, undefined);
         // Children come before their parents, as the lane layout needs.
         const order = graph.commits.map((commit) => commit.hash);
         assert.isBelow(order.indexOf(merge), order.indexOf(feature));
@@ -4495,6 +4502,10 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           [...first.commits, ...rest.commits, ...last.commits].map((commit) => commit.hash),
           order,
         );
+
+        yield* git(cwd, ["checkout", "-q", "--detach", feature]);
+        const detached = yield* driver.readCommitGraph({ cwd });
+        assert.equal(detached.headHash, feature);
       }),
     );
 

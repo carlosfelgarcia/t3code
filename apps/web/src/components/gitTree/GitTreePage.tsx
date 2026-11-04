@@ -1,18 +1,8 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { LegendListRef } from "@legendapp/list/react";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import {
-  AuthOrchestrationOperateScope,
-  type EnvironmentId,
-  type ProjectId,
-  type VcsRef,
-} from "@t3tools/contracts";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { type EnvironmentId, type ProjectId, type VcsRef } from "@t3tools/contracts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import * as Cause from "effect/Cause";
-import * as Option from "effect/Option";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -27,22 +17,12 @@ import { useRef, useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
 import { isElectron } from "~/env";
-import { useEnvironmentSettings } from "~/hooks/useSettings";
-import { cn, newMessageId, newThreadId } from "~/lib/utils";
-import { resolveProjectDefaultProviderModelSelection } from "~/providerInstances";
+import { failureOf, useCleanRepo } from "~/hooks/useCleanRepo";
+import { cn } from "~/lib/utils";
 import { useProjects } from "~/state/entities";
-import {
-  useEnvironmentProviders,
-  useEnvironments,
-  usePrimaryEnvironmentId,
-} from "~/state/environments";
-import { useEnvironmentScope } from "~/state/session";
-import { threadEnvironment } from "~/state/threads";
+import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { useOrchestrationCommand } from "~/state/use-orchestration-command";
 import { vcsEnvironment } from "~/state/vcs";
-import { buildThreadRouteParams } from "~/threadRoutes";
-import { DEFAULT_RUNTIME_MODE } from "~/types";
 
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -60,9 +40,6 @@ export interface GitTreeSearch {
   readonly environmentId?: EnvironmentId;
   readonly projectId?: ProjectId;
 }
-
-const CLEAN_REPO_PROMPT =
-  "Clean this repo by making sure master/main local branch is up to date (fix any conflicts if need it), removing local branches and prune remote. Do not delete branches that are checked out in a worktree or not yet merged; list those instead. If the working tree has uncommitted changes, stop and tell me instead of stashing or committing them.";
 
 const projectKey = (project: Pick<EnvironmentProject, "environmentId" | "id">) =>
   JSON.stringify([project.environmentId, project.id]);
@@ -159,12 +136,6 @@ function PageMessage({ children }: { children: React.ReactNode }) {
 
 type Operation = "pull" | "push" | "fetch" | "clean" | "refresh";
 
-function failureOf(result: { readonly cause: Cause.Cause<unknown> }): unknown {
-  return Option.getOrElse(Cause.findErrorOption(result.cause), () =>
-    squashAtomCommandFailure(result),
-  );
-}
-
 function GitTreeView({
   project,
   projectPicker,
@@ -174,7 +145,6 @@ function GitTreeView({
 }) {
   const { environmentId } = project;
   const cwd = project.workspaceRoot;
-  const navigate = useNavigate();
   const { data, error, loadingMore, reload, loadMore } = useGitTreeData(environmentId, cwd);
   const [running, setRunning] = useState<Operation | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -184,11 +154,8 @@ function GitTreeView({
   const push = useAtomCommand(vcsEnvironment.push, { reportFailure: false });
   const fetchPrune = useAtomCommand(vcsEnvironment.fetchPrune, { reportFailure: false });
   const deleteBranch = useAtomCommand(vcsEnvironment.deleteBranch, { reportFailure: false });
-  const startTurn = useOrchestrationCommand(threadEnvironment.startTurn, { reportFailure: false });
   const canWrite = useAtomValue(vcsEnvironment.push.permissionAtom(environmentId));
-  const canOperate = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
-  const settings = useEnvironmentSettings(environmentId);
-  const providers = useEnvironmentProviders().get(environmentId) ?? [];
+  const { canCleanRepo, cleanRepo } = useCleanRepo(project);
 
   const run = async (operation: Operation, title: string, action: () => Promise<string | null>) => {
     if (running !== null) return;
@@ -232,51 +199,7 @@ function GitTreeView({
 
   const runCleanRepo = () =>
     run("clean", "Clean Repo failed", async () => {
-      const resolved = resolveProjectSettings(settings, project.id, project).settings;
-      const modelSelection =
-        resolved.defaultModelSelection ??
-        resolveProjectDefaultProviderModelSelection(providers, settings, project.id);
-      if (modelSelection === null) {
-        throw new Error("No model is available on this environment. Enable a provider first.");
-      }
-      const threadId = newThreadId();
-      const title = "Clean repo";
-      const runtimeMode = resolved.defaultRuntimeMode ?? DEFAULT_RUNTIME_MODE;
-      const createdAt = new Date().toISOString();
-      const result = await startTurn({
-        environmentId,
-        input: {
-          threadId,
-          message: {
-            messageId: newMessageId(),
-            role: "user",
-            text: CLEAN_REPO_PROMPT,
-            attachments: [],
-          },
-          modelSelection,
-          runtimeMode,
-          interactionMode: "default",
-          bootstrap: {
-            // No branch or worktree path launches in the project's main checkout.
-            createThread: {
-              projectId: project.id,
-              title,
-              modelSelection,
-              runtimeMode,
-              interactionMode: "default",
-              branch: null,
-              worktreePath: null,
-              createdAt,
-            },
-          },
-          createdAt,
-        },
-      });
-      if (result._tag === "Failure") throw failureOf(result);
-      await navigate({
-        to: "/$environmentId/$threadId",
-        params: buildThreadRouteParams(scopeThreadRef(environmentId, threadId)),
-      });
+      await cleanRepo();
       return null;
     });
 
@@ -319,9 +242,11 @@ function GitTreeView({
   const graphWidth = Math.max(1, ...(data?.pages ?? []).map((page) => page.layout.width));
   const currentRef = data?.refs.find((ref) => ref.current) ?? null;
   const headHash =
-    currentRef === null
-      ? null
-      : (items.find((item) => item.commit.refs.includes(currentRef.name))?.commit.hash ?? null);
+    data?.headHash !== undefined
+      ? data.headHash
+      : currentRef === null
+        ? null
+        : (items.find((item) => item.commit.refs.includes(currentRef.name))?.commit.hash ?? null);
   const scrollToBranch = (ref: VcsRef) => {
     const index = items.findIndex((item) => item.commit.refs.includes(ref.name));
     if (index !== -1) void listRef.current?.scrollToIndex({ index, animated: false });
@@ -365,9 +290,9 @@ function GitTreeView({
       <Button
         size="sm"
         variant="outline"
-        disabled={!canOperate || busy || data?.isRepo !== true}
+        disabled={!canCleanRepo || busy || data?.isRepo !== true}
         title={
-          canOperate
+          canCleanRepo
             ? "Start an agent thread in the main checkout that cleans up this repository"
             : "Needs permission to start threads"
         }
@@ -434,6 +359,7 @@ function GitTreeView({
               items={items}
               width={graphWidth}
               headHash={headHash}
+              headBranch={currentRef?.name ?? null}
               listRef={listRef}
               footer={
                 data.nextCursor === null ? null : (
