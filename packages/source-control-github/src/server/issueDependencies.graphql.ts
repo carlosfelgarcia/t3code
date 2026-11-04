@@ -53,7 +53,7 @@ export const IssueBlockers = GraphQL.query("IssueBlockers", {
       { name: "ids", body: "[ID!]!" }
     ],
     selections: [
-      { name: "nodes", body: ["(ids:$", "ids", "){__typename...on Issue{id blockedBy(first:20){nodes{number title state repository{nameWithOwner}}}}}"] }
+      { name: "nodes", body: ["(ids:$", "ids", "){__typename...on Issue{id blockedBy(first:50){nodes{number title state repository{nameWithOwner}}}}}"] }
     ],
     fragments: []
   },

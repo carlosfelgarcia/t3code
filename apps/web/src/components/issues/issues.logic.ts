@@ -91,7 +91,6 @@ export const issueReference = (from: IssueRef, to: IssueRef) =>
     ? `#${to.number}`
     : `${to.repository}#${to.number}`;
 
-/** Null when the issue has no open blocker, so the row stays unmarked. */
 export function issueBlockedMarker(
   issue: IssueSummary,
 ): { readonly text: string; readonly tooltip: ReadonlyArray<string> } | null {

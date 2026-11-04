@@ -136,7 +136,7 @@ const ref = { host: "github.com", repository: "acme/web", number: 12 };
 
 it.effect("lists issues across repositories, newest update first, without pull requests", () =>
   Effect.gen(function* () {
-    const { calls, issues } = harness(() =>
+    const { calls, graphqlCalls, issues } = harness(() =>
       ok({
         total_count: 120,
         items: [
@@ -171,8 +171,20 @@ it.effect("lists issues across repositories, newest update first, without pull r
     expect(url.searchParams.get("order")).toBe("desc");
     expect(url.searchParams.get("per_page")).toBe("50");
     expect(url.searchParams.get("page")).toBe("2");
+    expect(graphqlCalls).toEqual([]);
   }),
 );
+
+const blockedPage = {
+  host: "github.com",
+  repositories: ["acme/web"],
+  state: "open",
+  labels: [],
+  query: undefined,
+  author: undefined,
+  page: 1,
+  perPage: 50,
+} as const;
 
 it.effect("names the open blockers of each blocked issue on a page in one request", () =>
   Effect.gen(function* () {
@@ -208,16 +220,7 @@ it.effect("names the open blockers of each blocked issue on a page in one reques
           ],
         }),
     );
-    const result = yield* (yield* issues).list({
-      host: "github.com",
-      repositories: ["acme/web"],
-      state: "open",
-      labels: [],
-      query: undefined,
-      author: undefined,
-      page: 1,
-      perPage: 50,
-    });
+    const result = yield* (yield* issues).list(blockedPage);
 
     expect(result.issues).toEqual([
       {
@@ -254,16 +257,7 @@ it.effect("still lists blocked issues by count when their blockers cannot be rea
         items: [{ ...rawIssue, node_id: "I_12", issue_dependencies_summary: { blocked_by: 1 } }],
       }),
     );
-    const result = yield* (yield* issues).list({
-      host: "github.com",
-      repositories: ["acme/web"],
-      state: "open",
-      labels: [],
-      query: undefined,
-      author: undefined,
-      page: 1,
-      perPage: 50,
-    });
+    const result = yield* (yield* issues).list(blockedPage);
 
     expect(result.issues).toEqual([{ ...summary, openBlockerCount: 1 }]);
   }),

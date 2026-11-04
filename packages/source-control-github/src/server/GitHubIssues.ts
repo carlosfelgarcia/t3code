@@ -113,14 +113,6 @@ const toSummary = (host: string, raw: RawIssue): IssueSummary => ({
     : { openBlockerCount: raw.issue_dependencies_summary.blocked_by }),
 });
 
-const toLinkedIssue = (host: string, raw: RawIssue): LinkedIssue => ({
-  host,
-  repository: repositoryOf(raw),
-  number: raw.number,
-  title: raw.title,
-  state: raw.state === "closed" ? "closed" : "open",
-});
-
 const IssueGraphQLGroup = IssueDependenciesGraphQLGroup.middleware(
   GitHubGraphQlClient.GitHubGraphQlAuth,
 );
@@ -225,34 +217,32 @@ export const make = Effect.gen(function* () {
   // Rows without them still show their count, so a failed read never fails the list.
   const openBlockers = Effect.fn("GitHubIssues.openBlockers")(
     function* (host: string, ids: ReadonlyArray<string>) {
-      if (ids.length === 0) return new Map<string, ReadonlyArray<LinkedIssue>>();
+      const blockers = new Map<string, ReadonlyArray<LinkedIssue>>();
+      if (ids.length === 0) return blockers;
       const answer = yield* client
         .IssueBlockers({ ids })
         .pipe(GitHubGraphQlClient.call({ host, operation: "listIssueBlockers" }));
-      return new Map(
-        answer.nodes.flatMap((node) =>
-          node?.__typename !== "Issue"
-            ? []
-            : [
-                [
-                  node.id,
-                  (node.blockedBy.nodes ?? []).flatMap((blocker) =>
-                    blocker === null || blocker.state !== "OPEN"
-                      ? []
-                      : [
-                          {
-                            host,
-                            repository: blocker.repository.nameWithOwner,
-                            number: blocker.number,
-                            title: blocker.title,
-                            state: "open" as const,
-                          },
-                        ],
-                  ),
-                ] as const,
-              ],
-        ),
-      );
+      for (const node of answer.nodes) {
+        if (node?.__typename !== "Issue") continue;
+        const open = (node.blockedBy.nodes ?? []).filter((blocker) => blocker?.state === "OPEN");
+        blockers.set(
+          node.id,
+          open.flatMap((blocker) =>
+            blocker === null
+              ? []
+              : [
+                  {
+                    host,
+                    repository: blocker.repository.nameWithOwner,
+                    number: blocker.number,
+                    title: blocker.title,
+                    state: "open" as const,
+                  },
+                ],
+          ),
+        );
+      }
+      return blockers;
     },
     Effect.orElseSucceed(() => new Map<string, ReadonlyArray<LinkedIssue>>()),
   );
@@ -364,7 +354,13 @@ export const make = Effect.gen(function* () {
     ).pipe(
       Effect.map(({ value }) =>
         value
-          .map((raw) => toLinkedIssue(ref.host, raw))
+          .map((raw): LinkedIssue => ({
+            host: ref.host,
+            repository: repositoryOf(raw),
+            number: raw.number,
+            title: raw.title,
+            state: raw.state === "closed" ? "closed" : "open",
+          }))
           .toSorted(
             (left, right) => Number(left.state === "closed") - Number(right.state === "closed"),
           ),

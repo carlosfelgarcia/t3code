@@ -3,7 +3,7 @@ query IssueBlockers($ids: [ID!]!) {
   nodes(ids: $ids) {
     ... on Issue {
       id
-      blockedBy(first: 20) {
+      blockedBy(first: 50) {
         nodes {
           number
           title

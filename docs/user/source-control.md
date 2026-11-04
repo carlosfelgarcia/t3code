@@ -288,7 +288,7 @@ issue's project with the issue's number, title, and link in the composer. Nothin
 you send it, and the agent reads the rest of the issue itself. Issues are web and desktop only.
 
 An issue with open blockers is marked in the list with the blocking issues' numbers; hover the
-mark for their titles. An open issue lists what it is blocked by and what it is blocking, including
+mark for their titles. An opened issue lists what it is blocked by and what it is blocking, including
 closed ones, and selecting one opens it. Blockers are set on GitHub. GitHub Enterprise Server
 versions without issue dependencies show neither.
 
