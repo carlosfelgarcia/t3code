@@ -7,6 +7,7 @@ import type {
   IssueRepository,
   IssueSummary,
   PullRequestLabel,
+  PullRequestLabelCandidate,
   SourceControlProviderDiscoveryItem,
 } from "@t3tools/contracts";
 
@@ -127,6 +128,75 @@ export function issueRowLabels(
   edit: IssueLabelEdit | undefined,
 ): ReadonlyArray<PullRequestLabel> {
   return edit !== undefined && issue.updatedAt <= edit.staleUpdatedAt ? edit.labels : issue.labels;
+}
+
+type IssueWithLabels = IssueRef & { readonly labels: ReadonlyArray<PullRequestLabel> };
+
+export interface IssueBulkLabel extends Pick<
+  PullRequestLabelCandidate,
+  "name" | "color" | "description"
+> {
+  /** Whether the label is on every selected issue, on some, or on none. */
+  readonly state: "all" | "some" | "none";
+}
+
+/**
+ * The labels a selection can be given: those that exist, by name, in every selected issue's
+ * repository. `repositoryLabels` is keyed by `issueRepositoryKey`.
+ */
+export function issueBulkLabels(
+  selected: ReadonlyArray<IssueWithLabels>,
+  repositoryLabels: ReadonlyMap<string, ReadonlyArray<PullRequestLabelCandidate>>,
+): { readonly labels: ReadonlyArray<IssueBulkLabel>; readonly hidden: boolean } {
+  const repositories = [...new Set(selected.map(issueRepositoryKey))].map(
+    (key) => repositoryLabels.get(key) ?? [],
+  );
+  const [first = [], ...rest] = repositories;
+  const shared = first.filter((label) =>
+    rest.every((labels) => labels.some(({ name }) => name === label.name)),
+  );
+  const offered = new Set(repositories.flatMap((labels) => labels.map(({ name }) => name)));
+  return {
+    labels: shared.map(({ name, color, description }) => {
+      const on = selected.filter((issue) => issue.labels.some((label) => label.name === name));
+      return {
+        name,
+        color,
+        description,
+        state: on.length === 0 ? "none" : on.length === selected.length ? "all" : "some",
+      };
+    }),
+    hidden: offered.size > shared.length,
+  };
+}
+
+/** As GitHub does: a label on every selected issue comes off all of them, otherwise it goes on all. */
+export function issueBulkLabelChange<Issue extends IssueWithLabels>(
+  selected: ReadonlyArray<Issue>,
+  label: Pick<IssueBulkLabel, "name" | "color" | "state">,
+): {
+  readonly applied: boolean;
+  readonly changes: ReadonlyArray<{
+    readonly issue: Issue;
+    readonly labels: ReadonlyArray<PullRequestLabel>;
+  }>;
+} {
+  const applied = label.state !== "all";
+  return {
+    applied,
+    changes: selected.flatMap((issue) => {
+      const has = issue.labels.some(({ name }) => name === label.name);
+      if (has === applied) return [];
+      return [
+        {
+          issue,
+          labels: applied
+            ? [...issue.labels, { name: label.name, color: label.color }]
+            : issue.labels.filter(({ name }) => name !== label.name),
+        },
+      ];
+    }),
+  };
 }
 
 type IssueAuthorProviders = ReadonlyArray<{

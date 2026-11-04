@@ -250,7 +250,7 @@ export const make = Effect.gen(function* () {
   const list: SourceControlIssues["list"] = Effect.fn("GitHubIssues.list")(function* (input) {
     const params = new URLSearchParams({
       q: searchQuery(input),
-      sort: "updated",
+      sort: "created",
       order: "desc",
       per_page: String(input.perPage),
       page: String(input.page),

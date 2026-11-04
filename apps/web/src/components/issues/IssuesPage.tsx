@@ -1,4 +1,5 @@
-import { RegistryContext } from "@effect/atom-react";
+import { RegistryContext, useAtomValue } from "@effect/atom-react";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import {
   DEFAULT_SERVER_SETTINGS,
   type EnvironmentId,
@@ -7,10 +8,13 @@ import {
   type IssueListState,
   type IssueRef,
   type IssueSummary,
+  type PullRequestLabel,
 } from "@t3tools/contracts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { AsyncResult } from "effect/reactivity";
 import {
   BanIcon,
+  ChevronDownIcon,
   CircleCheckIcon,
   CircleDotIcon,
   FolderGit2Icon,
@@ -22,23 +26,30 @@ import {
 import { useContext, useEffect, useState } from "react";
 
 import { isElectron } from "~/env";
+import { registerCommands } from "~/shortcuts/dispatcher";
 import { cn } from "~/lib/utils";
 import { useAllEnvironmentShellsBootstrapped, useProjects } from "~/state/entities";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
-import { issueEnvironment } from "~/state/issues";
-import { useEnvironmentQuery } from "~/state/query";
+import { issueEnvironment, issueLabelCandidateLists, issueListPages } from "~/state/issues";
+import { formatEnvironmentQueryError, useEnvironmentQuery } from "~/state/query";
 import { sourceControlEnvironment } from "~/state/sourceControl";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { Button } from "../ui/button";
+import { Checkbox } from "../ui/checkbox";
 import { Menu, MenuCheckboxItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { RefreshIcon } from "../ui/refresh-icon";
 import { SidebarInset } from "../ui/sidebar";
 import { Spinner } from "../ui/spinner";
+import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
+import { PullRequestCandidatePicker } from "../pullRequest/PullRequestCandidatePicker";
 import { PullRequestCompactFilterMenu } from "../pullRequest/PullRequestCompactFilterMenu";
+import { readableFailure } from "../pullRequest/pullRequestDetail.logic";
+import { LabelCandidateRow, labelCandidateMatches } from "../pullRequest/PullRequestLabelPicker";
+import { showPullRequestLinkContextMenu } from "../pullRequest/pullRequestLinkContextMenu";
 import {
   type PullRequestFilterOption,
   PullRequestSearchInput,
@@ -50,7 +61,7 @@ import {
   PullRequestRowLines,
 } from "../pullRequest/PullRequestListRow";
 import { PullRequestRowLabels } from "../pullRequest/PullRequestRow";
-import { IssueDetailPanel } from "./IssueDetailPanel";
+import { IssueDetailPanel, useStartIssueThread } from "./IssueDetailPanel";
 import { IssueStateGlyph } from "./IssueStateGlyph";
 import {
   effectiveIssueAuthor,
@@ -59,11 +70,15 @@ import {
   issueBlockedMarker,
   issueAuthorIgnored,
   issueAuthorOptions,
+  type IssueBulkLabel,
+  issueBulkLabelChange,
+  issueBulkLabels,
   type IssueLabelEdit,
   issueKey,
   issueRepositories,
   issueRepositoryKey,
   issueRowLabels,
+  projectsForRepository,
 } from "./issues.logic";
 
 export interface IssuesSearch {
@@ -82,6 +97,14 @@ export interface IssuesSearch {
 }
 
 const SEARCH_DEBOUNCE_MS = 300;
+const LABEL_WRITE_CONCURRENCY = 4;
+const NO_ISSUE_KEYS: ReadonlySet<string> = new Set();
+
+type MenuPosition = { readonly x: number; readonly y: number };
+type IssueLabelChanges = ReadonlyArray<{
+  readonly issue: IssueSummary;
+  readonly labels: ReadonlyArray<PullRequestLabel>;
+}>;
 
 /** `undefined` clears a key. */
 type IssuesSearchPatch = { readonly [Key in keyof IssuesSearch]?: IssuesSearch[Key] | undefined };
@@ -171,6 +194,115 @@ export function IssuesPage() {
   );
   const [refreshing, setRefreshing] = useState(false);
   const [labelEdits, setLabelEdits] = useState<ReadonlyMap<string, IssueLabelEdit>>(new Map());
+  const { start: startThread } = useStartIssueThread();
+
+  const loadedPages = useAtomValue(
+    issueListPages(
+      environmentId,
+      pageInputs.filter((input) => input !== null),
+    ),
+  );
+  const loadedIssues = [
+    ...new Map(
+      loadedPages
+        .flatMap((page) => AsyncResult.getOrElse(page, () => null)?.issues ?? [])
+        .map((issue) => [issueKey(issue), issue] as const),
+    ).values(),
+  ];
+  // Keyed by the filters, so changing one clears it while Load more and Refresh keep it.
+  const [selection, setSelection] = useState<{
+    readonly listKey: string;
+    readonly keys: ReadonlySet<string>;
+    readonly anchor: string | null;
+  }>({ listKey, keys: NO_ISSUE_KEYS, anchor: null });
+  const selectionCurrent = selection.listKey === listKey;
+  const selectedKeys = selectionCurrent ? selection.keys : NO_ISSUE_KEYS;
+  const anchor = selectionCurrent ? selection.anchor : null;
+  // Issues a refresh no longer lists drop out here.
+  const selectedIssues = loadedIssues.filter((issue) => selectedKeys.has(issueKey(issue)));
+  const selecting = selectedIssues.length > 0;
+  const allSelected = selecting && selectedIssues.length === loadedIssues.length;
+  const visibleSelection = new Set(selectedIssues.map(issueKey));
+  const setSelected = (issues: ReadonlyArray<IssueRef>, nextAnchor: string | null) =>
+    setSelection({ listKey, keys: new Set(issues.map(issueKey)), anchor: nextAnchor });
+  const clearSelection = () => setSelected([], null);
+  const selectAll = () => setSelected(loadedIssues, null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Esc clears the selection wherever focus is, ahead of the app's own Escape shortcuts.
+  useEffect(() => {
+    if (!selecting) return;
+    return registerCommands(
+      {},
+      {
+        onKeyDown: (event) => {
+          if (event.key !== "Escape") return false;
+          const target = event.target instanceof Element ? event.target : null;
+          if (target?.closest("input, textarea, [contenteditable], [role=dialog], [role=menu]")) {
+            return false;
+          }
+          event.preventDefault();
+          setSelection({ listKey, keys: NO_ISSUE_KEYS, anchor: null });
+        },
+      },
+    );
+  }, [selecting, listKey]);
+  const toggleSelected = (issue: IssueSummary) => {
+    const key = issueKey(issue);
+    setSelected(
+      visibleSelection.has(key)
+        ? selectedIssues.filter((entry) => issueKey(entry) !== key)
+        : [...selectedIssues, issue],
+      key,
+    );
+  };
+  const selectRange = (issue: IssueSummary) => {
+    const to = loadedIssues.findIndex((entry) => issueKey(entry) === issueKey(issue));
+    const from = loadedIssues.findIndex((entry) => issueKey(entry) === anchor);
+    if (from === -1 || to === -1) return toggleSelected(issue);
+    setSelected(
+      [...selectedIssues, ...loadedIssues.slice(Math.min(from, to), Math.max(from, to) + 1)],
+      anchor,
+    );
+  };
+  const clickIssue = (issue: IssueSummary, event: React.MouseEvent) => {
+    if (event.metaKey || event.ctrlKey) toggleSelected(issue);
+    else if (event.shiftKey) selectRange(issue);
+    else select(issue);
+  };
+  const checkIssue = (issue: IssueSummary, event: Event) => {
+    if (event instanceof MouseEvent && event.shiftKey) selectRange(issue);
+    else toggleSelected(issue);
+  };
+  const openIssueMenu = (issue: IssueSummary, position: MenuPosition) => {
+    const issueProjects = projectsForRepository(projects, issue);
+    const environmentLabel = (environmentId: EnvironmentId) =>
+      environments.find((environment) => environment.environmentId === environmentId)?.label ??
+      environmentId;
+    void showPullRequestLinkContextMenu({
+      url: issue.url,
+      openLabel: "Open on GitHub",
+      position,
+      items: [
+        issueProjects.length > 1
+          ? {
+              id: "start-thread",
+              label: "Start thread",
+              children: issueProjects.map((project, index) => ({
+                id: `start-thread:${index}`,
+                label: `${project.title} · ${environmentLabel(project.environmentId)}`,
+              })),
+            }
+          : {
+              id: "start-thread:0",
+              label: "Start thread",
+              ...(issueProjects.length === 0 ? { disabled: true } : {}),
+            },
+      ],
+      onAction: (action) => {
+        const project = issueProjects[Number(action.slice("start-thread:".length))];
+        if (project !== undefined) void startThread(issue, project);
+      },
+    });
+  };
 
   const updateSearch = (patch: IssuesSearchPatch) =>
     void navigate({ search: (previous) => patchSearch(previous, patch), replace: true });
@@ -282,9 +414,13 @@ export function IssuesPage() {
               environmentId={environmentId}
               input={input}
               last={index === pageInputs.length - 1}
-              selected={selected}
+              current={selected}
+              selection={visibleSelection}
+              selecting={selecting}
               labelEdits={labelEdits}
-              onSelect={select}
+              onClickIssue={clickIssue}
+              onCheckIssue={checkIssue}
+              onIssueMenu={openIssueMenu}
               onLoadMore={() => setLoaded({ key: listKey, pages: pageCount + 1 })}
               onRetry={() => void refreshFromGitHub()}
             />
@@ -322,61 +458,118 @@ export function IssuesPage() {
               <RefreshIcon size="md" refreshing={refreshing} />
             </Button>
           </WorkspacePageHeader>
-          <div className="flex shrink-0 flex-wrap items-center gap-2 px-4 pb-3">
-            <div className="min-w-0 basis-full">
-              <PullRequestSearchInput
-                value={search.q ?? ""}
-                placeholder="Search issue titles"
-                label="Search issues"
-                onChange={setPendingQuery}
-                onSubmit={commitQuery}
-              />
+          <div className="flex shrink-0 flex-col gap-2 px-4 pb-3">
+            <PullRequestSearchInput
+              value={search.q ?? ""}
+              placeholder="Search issue titles"
+              label="Search issues"
+              onChange={setPendingQuery}
+              onSubmit={commitQuery}
+            />
+            {/* The selection bar covers the filters rather than replacing them, so rows never shift. */}
+            <div className="relative">
+              <div
+                className={cn("flex flex-wrap items-center gap-2", selecting && "invisible")}
+                inert={selecting}
+              >
+                <Checkbox
+                  aria-label="Select all loaded issues"
+                  checked={false}
+                  disabled={loadedIssues.length === 0}
+                  onCheckedChange={selectAll}
+                />
+                <PullRequestCompactFilterMenu
+                  label="Filter by state"
+                  outlined
+                  value={search.state}
+                  options={STATE_OPTIONS}
+                  onChange={(state) => updateSearch({ state })}
+                />
+                {repositories.length > 1 ? (
+                  <PullRequestCompactFilterMenu
+                    label="Filter by repository"
+                    outlined
+                    value={search.repo ?? ""}
+                    options={repositoryOptions}
+                    onChange={(repo) => updateSearch({ repo: repo === "" ? undefined : repo })}
+                  />
+                ) : null}
+                {authorOptions.length > 0 ? (
+                  <PullRequestCompactFilterMenu
+                    label="Filter by author"
+                    triggerIcon={<UserIcon aria-hidden className="size-4" />}
+                    triggerLabel={author === undefined ? "Author" : `Author · ${author}`}
+                    outlined
+                    value={author ?? ""}
+                    options={authorOptions}
+                    onChange={(next) =>
+                      updateSearch({ author: next === "" ? ISSUE_AUTHOR_ALL : next })
+                    }
+                  />
+                ) : null}
+                <IssueLabelFilter
+                  options={labelOptions}
+                  selected={search.labels ?? []}
+                  onChange={(labels) =>
+                    updateSearch({ labels: labels.length === 0 ? undefined : labels })
+                  }
+                />
+                {environmentOptions.length > 1 && environmentId !== null ? (
+                  <PullRequestCompactFilterMenu
+                    label="Read issues with"
+                    outlined
+                    value={environmentId as string}
+                    options={environmentOptions}
+                    onChange={(next) => updateSearch({ environmentId: next as EnvironmentId })}
+                  />
+                ) : null}
+              </div>
+              {selecting && environmentId !== null ? (
+                <div className="absolute inset-x-0 top-0 flex items-center gap-2">
+                  <Checkbox
+                    aria-label={allSelected ? "Clear the selection" : "Select all loaded issues"}
+                    checked={allSelected}
+                    indeterminate={!allSelected}
+                    onCheckedChange={() => (allSelected ? clearSelection() : selectAll())}
+                  />
+                  <span className="text-sm">{selectedIssues.length} selected</span>
+                  <IssueBulkLabelPicker
+                    environmentId={environmentId}
+                    selected={selectedIssues.map((issue) => ({
+                      ...issue,
+                      labels: issueRowLabels(issue, labelEdits.get(issueKey(issue))),
+                    }))}
+                    onApplied={(changes) => {
+                      if (changes.length === 0) return;
+                      setLabelEdits((current) => {
+                        const next = new Map(current);
+                        for (const { issue, labels } of changes) {
+                          next.set(issueKey(issue), { staleUpdatedAt: issue.updatedAt, labels });
+                        }
+                        return next;
+                      });
+                      refreshList();
+                    }}
+                  />
+                  <Button variant="ghost" onClick={clearSelection}>
+                    Clear
+                  </Button>
+                </div>
+              ) : null}
             </div>
-            <PullRequestCompactFilterMenu
-              label="Filter by state"
-              outlined
-              value={search.state}
-              options={STATE_OPTIONS}
-              onChange={(state) => updateSearch({ state })}
-            />
-            {repositories.length > 1 ? (
-              <PullRequestCompactFilterMenu
-                label="Filter by repository"
-                outlined
-                value={search.repo ?? ""}
-                options={repositoryOptions}
-                onChange={(repo) => updateSearch({ repo: repo === "" ? undefined : repo })}
-              />
-            ) : null}
-            {authorOptions.length > 0 ? (
-              <PullRequestCompactFilterMenu
-                label="Filter by author"
-                triggerIcon={<UserIcon aria-hidden className="size-4" />}
-                triggerLabel={author === undefined ? "Author" : `Author · ${author}`}
-                outlined
-                value={author ?? ""}
-                options={authorOptions}
-                onChange={(next) => updateSearch({ author: next === "" ? ISSUE_AUTHOR_ALL : next })}
-              />
-            ) : null}
-            <IssueLabelFilter
-              options={labelOptions}
-              selected={search.labels ?? []}
-              onChange={(labels) =>
-                updateSearch({ labels: labels.length === 0 ? undefined : labels })
-              }
-            />
-            {environmentOptions.length > 1 && environmentId !== null ? (
-              <PullRequestCompactFilterMenu
-                label="Read issues with"
-                outlined
-                value={environmentId as string}
-                options={environmentOptions}
-                onChange={(next) => updateSearch({ environmentId: next as EnvironmentId })}
-              />
-            ) : null}
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-6">{listBody}</div>
+          <div
+            className="min-h-0 flex-1 overflow-y-auto px-2 pb-6 outline-none"
+            tabIndex={-1}
+            onKeyDown={(event) => {
+              if (event.key === "a" && (event.metaKey || event.ctrlKey) && !event.altKey) {
+                event.preventDefault();
+                selectAll();
+              }
+            }}
+          >
+            {listBody}
+          </div>
         </div>
         {selected !== null && environmentId !== null ? (
           <IssueDetailPanel
@@ -409,18 +602,26 @@ function IssueListPage({
   environmentId,
   input,
   last,
-  selected,
+  current,
+  selection,
+  selecting,
   labelEdits,
-  onSelect,
+  onClickIssue,
+  onCheckIssue,
+  onIssueMenu,
   onLoadMore,
   onRetry,
 }: {
   environmentId: EnvironmentId;
   input: IssueListInput;
   last: boolean;
-  selected: IssueRef | null;
+  current: IssueRef | null;
+  selection: ReadonlySet<string>;
+  selecting: boolean;
   labelEdits: ReadonlyMap<string, IssueLabelEdit>;
-  onSelect: (issue: IssueRef) => void;
+  onClickIssue: (issue: IssueSummary, event: React.MouseEvent) => void;
+  onCheckIssue: (issue: IssueSummary, event: Event) => void;
+  onIssueMenu: (issue: IssueSummary, position: MenuPosition) => void;
   onLoadMore: () => void;
   onRetry: () => void;
 }) {
@@ -464,8 +665,12 @@ function IssueListPage({
           key={issueKey(issue)}
           issue={issue}
           labels={issueRowLabels(issue, labelEdits.get(issueKey(issue)))}
-          selected={selected !== null && issueKey(selected) === issueKey(issue)}
-          onSelect={onSelect}
+          current={current !== null && issueKey(current) === issueKey(issue)}
+          checked={selection.has(issueKey(issue))}
+          selecting={selecting}
+          onClick={onClickIssue}
+          onCheck={onCheckIssue}
+          onMenu={onIssueMenu}
         />
       ))}
       {last && result.hasMore ? (
@@ -482,44 +687,211 @@ function IssueListPage({
 function IssueRow({
   issue,
   labels,
-  selected,
-  onSelect,
+  current,
+  checked,
+  selecting,
+  onClick,
+  onCheck,
+  onMenu,
 }: {
   issue: IssueSummary;
   labels: IssueSummary["labels"];
-  selected: boolean;
-  onSelect: (issue: IssueRef) => void;
+  current: boolean;
+  checked: boolean;
+  selecting: boolean;
+  onClick: (issue: IssueSummary, event: React.MouseEvent) => void;
+  onCheck: (issue: IssueSummary, event: Event) => void;
+  onMenu: (issue: IssueSummary, position: MenuPosition) => void;
 }) {
   return (
-    <button
-      type="button"
-      aria-current={selected ? "true" : undefined}
+    <div
       className={cn(
-        PULL_REQUEST_ROW_CLASS,
-        "px-3 py-2.5 hover:bg-accent/60",
-        selected && "bg-accent",
+        "group/issue-row flex items-center rounded-md pl-2",
+        current ? "bg-accent" : checked ? "bg-accent/60" : "hover:bg-accent/60",
       )}
-      onClick={() =>
-        onSelect({ host: issue.host, repository: issue.repository, number: issue.number })
-      }
+      onContextMenu={(event) => {
+        event.preventDefault();
+        onMenu(issue, { x: event.clientX, y: event.clientY });
+      }}
     >
-      <span className="flex w-4 shrink-0 flex-col items-center">
-        <IssueStateGlyph state={issue.state} />
+      <span
+        className={cn(
+          "flex shrink-0",
+          !selecting && "opacity-0 group-hover/issue-row:opacity-100 focus-within:opacity-100",
+        )}
+      >
+        <Checkbox
+          aria-label={`Select issue #${issue.number}`}
+          checked={checked}
+          onCheckedChange={(_, details) => onCheck(issue, details.event)}
+        />
       </span>
-      <PullRequestRowLines
-        number={<span className={PULL_REQUEST_ROW_NUMBER_CLASS}>#{issue.number}</span>}
-        title={issue.title}
-        meta={
-          <span className="@container/pr-row-meta flex min-w-0 flex-1 items-center gap-1.5">
-            <PullRequestRowLabels labels={labels} />
-            <IssueBlockedMarker issue={issue} />
-            <PullRequestRowAuthor actor={issue.author} />
-            <span className="truncate">{issue.repository}</span>
-          </span>
-        }
-        updatedAt={issue.updatedAt}
-      />
-    </button>
+      <button
+        type="button"
+        aria-current={current ? "true" : undefined}
+        className={cn(PULL_REQUEST_ROW_CLASS, "min-w-0 flex-1 px-2 py-2.5")}
+        // Shift-click selects a range of rows, not the text between them.
+        onMouseDown={(event) => {
+          if (event.shiftKey) event.preventDefault();
+        }}
+        onClick={(event) => onClick(issue, event)}
+      >
+        <span className="flex w-4 shrink-0 flex-col items-center">
+          <IssueStateGlyph state={issue.state} />
+        </span>
+        <PullRequestRowLines
+          number={<span className={PULL_REQUEST_ROW_NUMBER_CLASS}>#{issue.number}</span>}
+          title={issue.title}
+          meta={
+            <span className="@container/pr-row-meta flex min-w-0 flex-1 items-center gap-1.5">
+              <PullRequestRowLabels labels={labels} />
+              <IssueBlockedMarker issue={issue} />
+              <PullRequestRowAuthor actor={issue.author} />
+              <span className="truncate">{issue.repository}</span>
+            </span>
+          }
+          updatedAt={issue.updatedAt}
+        />
+      </button>
+    </div>
+  );
+}
+
+/** Labels for every selected issue; each issue is its own request, so some can fail alone. */
+function IssueBulkLabelPicker({
+  environmentId,
+  selected,
+  onApplied,
+}: {
+  environmentId: EnvironmentId;
+  /** With any label edits not yet in the list already applied. */
+  selected: ReadonlyArray<IssueSummary>;
+  onApplied: (changes: IssueLabelChanges) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [pending, setPending] = useState(false);
+  const setLabels = useAtomCommand(issueEnvironment.setLabels, { reportFailure: false });
+
+  // Labels are per repository, so one issue from each is enough to read them.
+  const repositories = [
+    ...new Map(
+      selected.map((issue) => [
+        issueRepositoryKey(issue),
+        { host: issue.host, repository: issue.repository, number: issue.number },
+      ]),
+    ),
+  ];
+  const reads = useAtomValue(
+    issueLabelCandidateLists(environmentId, open ? repositories.map(([, ref]) => ref) : []),
+  );
+  const lists = reads.map((read) => AsyncResult.getOrElse(read, () => null));
+  const failure = reads.find((read) => read._tag === "Failure");
+  const { labels, hidden } = issueBulkLabels(
+    selected,
+    new Map(repositories.map(([key], index) => [key, lists[index]?.candidates ?? []])),
+  );
+
+  const apply = async (label: IssueBulkLabel) => {
+    const { applied, changes } = issueBulkLabelChange(selected, label);
+    if (pending || changes.length === 0) return;
+    setPending(true);
+    const results: Array<Awaited<ReturnType<typeof setLabels>>> = [];
+    const queue = changes.map(({ issue }, index) => ({ issue, index }));
+    const write = async () => {
+      for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+        const { issue, index } = next;
+        results[index] = await setLabels({
+          environmentId,
+          input: {
+            host: issue.host,
+            repository: issue.repository,
+            number: issue.number,
+            labels: [label.name],
+            applied,
+          },
+        });
+      }
+    };
+    await Promise.all(Array.from({ length: LABEL_WRITE_CONCURRENCY }, write));
+    setPending(false);
+
+    const failed = changes.flatMap(({ issue }, index) => {
+      const result = results[index];
+      return result?._tag === "Failure"
+        ? [
+            {
+              issue,
+              reason: readableFailure(
+                squashAtomCommandFailure(result),
+                `You don't have permission to change labels in ${issue.repository}.`,
+              ),
+            },
+          ]
+        : [];
+    });
+    onApplied(changes.filter((_, index) => results[index]?._tag !== "Failure"));
+    if (failed.length === 0) return;
+    toastManager.add({
+      type: "error",
+      title: `Updated ${changes.length - failed.length} of ${changes.length}`,
+      description: (
+        <ul>
+          {failed.map(({ issue, reason }) => (
+            <li key={issueKey(issue)}>
+              {issue.repository}#{issue.number}: {reason}
+            </li>
+          ))}
+        </ul>
+      ),
+    });
+  };
+
+  return (
+    <PullRequestCandidatePicker
+      icon={<TagIcon className="size-3.5" />}
+      label="Change labels of the selected issues"
+      trigger={
+        <Button variant="outline" aria-label="Change labels of the selected issues">
+          <TagIcon aria-hidden className="size-4" />
+          Labels
+          <ChevronDownIcon aria-hidden className="text-muted-foreground" />
+        </Button>
+      }
+      allowed
+      disabledReason=""
+      open={open}
+      onOpenChange={setOpen}
+      query={search}
+      onQueryChange={setSearch}
+      searchLabel="Search labels"
+      isPending={failure === undefined && lists.some((list) => list === null)}
+      error={failure === undefined ? null : formatEnvironmentQueryError(failure.cause)}
+      candidates={labels.filter((label) => labelCandidateMatches(label, search))}
+      emptyLabel={
+        hidden
+          ? "The selected repositories have no labels in common."
+          : "This repository has no labels."
+      }
+      noMatchLabel="No label matches that."
+      errorLabel="The labels could not be read."
+      truncated={hidden || lists.some((list) => list?.truncated === true)}
+      truncatedLabel={
+        hidden
+          ? "Labels missing from some of the selected repositories are hidden."
+          : "This repository has more labels than are listed here. Apply the rest on GitHub."
+      }
+      candidateKey={(label) => label.name}
+      disabled={pending}
+      onSelect={(label) => void apply(label)}
+    >
+      {(label) => (
+        <LabelCandidateRow
+          candidate={{ ...label, isApplied: label.state === "all" }}
+          partial={label.state === "some"}
+        />
+      )}
+    </PullRequestCandidatePicker>
   );
 }
 

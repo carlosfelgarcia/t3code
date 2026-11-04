@@ -5,6 +5,7 @@ import type {
   EnvironmentId,
   IssueDetail,
   IssueRef,
+  IssueSummary,
   LinkedIssue,
   PullRequestLabelCandidate,
 } from "@t3tools/contracts";
@@ -351,18 +352,14 @@ function IssueLabels({
 }
 
 /** Opens a draft in the issue's project with a reference to it; the user sends it. */
-function IssueStartThread({
-  detail,
-  projects,
-}: {
-  detail: IssueDetail;
-  projects: ReadonlyArray<EnvironmentProject>;
-}) {
+export function useStartIssueThread() {
   const newThread = useNewThreadHandler();
-  const { environments } = useEnvironments();
   const [opening, setOpening] = useState(false);
 
-  const start = async (project: EnvironmentProject) => {
+  const start = async (
+    issue: Pick<IssueSummary, "number" | "title" | "url">,
+    project: EnvironmentProject,
+  ) => {
     setOpening(true);
     const session = await newThread(scopeProjectRef(project.environmentId, project.id)).then(
       (result) => result,
@@ -378,7 +375,7 @@ function IssueStartThread({
       return;
     }
     const store = useComposerDraftStore.getState();
-    const task = issueThreadPrompt(detail);
+    const task = issueThreadPrompt(issue);
     store.setPrompt(
       session.draftId,
       handoffPrompt(
@@ -391,6 +388,19 @@ function IssueStartThread({
     );
     lastIssuePromptByDraft.set(session.draftId, task);
   };
+  return { start, opening };
+}
+
+function IssueStartThread({
+  detail,
+  projects,
+}: {
+  detail: IssueDetail;
+  projects: ReadonlyArray<EnvironmentProject>;
+}) {
+  const { environments } = useEnvironments();
+  const { start: startThread, opening } = useStartIssueThread();
+  const start = (project: EnvironmentProject) => startThread(detail, project);
 
   const [only] = projects;
   if (projects.length <= 1) {

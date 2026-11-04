@@ -16,7 +16,7 @@ import * as BuiltInDrivers from "../sourceControl/builtInDrivers.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import * as IssueService from "./IssueService.ts";
 
-const issue = (host: string, repository: string, number: number, updatedAt: string) =>
+const issue = (host: string, repository: string, number: number, createdAt: string) =>
   ({
     host,
     repository,
@@ -27,8 +27,8 @@ const issue = (host: string, repository: string, number: number, updatedAt: stri
     author: null,
     labels: [],
     commentCount: 0,
-    createdAt: "2026-10-01T00:00:00Z",
-    updatedAt,
+    createdAt,
+    updatedAt: "2026-10-04T00:00:00Z",
   }) satisfies IssueSummary;
 
 const makeService = (issues: Partial<SourceControlIssues>) => {
@@ -51,7 +51,7 @@ const makeService = (issues: Partial<SourceControlIssues>) => {
   return IssueService.make.pipe(Effect.provide(drivers));
 };
 
-it.effect("lists each repository once and merges hosts, newest update first", () =>
+it.effect("lists each repository once and merges hosts, newest created first", () =>
   Effect.gen(function* () {
     const listed: Array<SourceControlIssueListInput> = [];
     const service = yield* makeService({

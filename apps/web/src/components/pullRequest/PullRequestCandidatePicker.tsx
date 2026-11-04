@@ -1,5 +1,5 @@
 // Menu typeahead consumes search keystrokes; use a combobox.
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 import { Button } from "../ui/button";
 import {
@@ -16,6 +16,7 @@ import { PullRequestPeopleGhost } from "./PullRequestGhosts";
 export function PullRequestCandidatePicker<T>({
   icon,
   label,
+  trigger,
   allowed,
   disabledReason,
   open,
@@ -38,6 +39,8 @@ export function PullRequestCandidatePicker<T>({
 }: {
   icon: ReactNode;
   label: string;
+  /** Replaces the icon button. */
+  trigger?: ReactElement;
   allowed: boolean;
   disabledReason: string;
   open: boolean;
@@ -98,9 +101,11 @@ export function PullRequestCandidatePicker<T>({
     >
       <ComboboxTrigger
         render={
-          <Button size="icon-xs" variant="ghost" aria-label={label}>
-            {icon}
-          </Button>
+          trigger ?? (
+            <Button size="icon-xs" variant="ghost" aria-label={label}>
+              {icon}
+            </Button>
+          )
         }
       />
       <ComboboxPopup align="start" side="bottom" className="w-72">

@@ -287,6 +287,14 @@ refuses the change, the label goes back and T3 Code says why. **Start thread** o
 issue's project with the issue's number, title, and link in the composer. Nothing is sent until
 you send it, and the agent reads the rest of the issue itself. Issues are web and desktop only.
 
+The list shows the newest issues first, in issue-number order within a repository. To label
+several issues at once, select them with their checkboxes, Ctrl/Cmd-click, or Shift-click for a
+range, then use **Labels**. Clicking a label that is on every
+selected issue takes it off all of them; any other label goes on all of them. Select all (or
+Ctrl/Cmd+A in the list) covers only the issues loaded so far, and changing a filter clears the
+selection. A selection across repositories offers only the labels they all have. Right-click an
+issue to start a thread from it, copy its link, or open it on GitHub.
+
 An issue with open blockers is marked in the list with the blocking issues' numbers; hover the
 mark for their titles. An opened issue lists what it is blocked by and what it is blocking, including
 closed ones, and selecting one opens it. Blockers are set on GitHub. GitHub Enterprise Server

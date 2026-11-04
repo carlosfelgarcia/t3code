@@ -16,33 +16,52 @@ export const openOnHostLabel = (host: SourceControlDefinition): string =>
 
 function pullRequestLinkContextMenuItems(
   openLabel: string,
+  separatorBefore: boolean,
 ): readonly ContextMenuItem<PullRequestLinkContextMenuAction>[] {
   return [
-    { id: "copy-link", label: "Copy link", icon: "copy" },
+    {
+      id: "copy-link",
+      label: "Copy link",
+      icon: "copy",
+      ...(separatorBefore ? { separatorBefore } : {}),
+    },
     { id: "open-external", label: openLabel },
   ];
 }
 
-export async function showPullRequestLinkContextMenu({
+/** `items` go above the link actions; picking one calls `onAction`. */
+export async function showPullRequestLinkContextMenu<Action extends string = never>({
   url,
   openLabel,
   position,
+  items = [],
+  onAction,
 }: {
   readonly url: string;
   readonly openLabel: string;
   readonly position: { readonly x: number; readonly y: number };
+  readonly items?: readonly ContextMenuItem<Action>[];
+  readonly onAction?: (action: Action) => void;
 }): Promise<void> {
   const api = readLocalApi();
   if (!api) return;
-  let action: PullRequestLinkContextMenuAction | null = null;
+  let action: PullRequestLinkContextMenuAction | Action | null = null;
   try {
-    action = await api.contextMenu.show(pullRequestLinkContextMenuItems(openLabel), position);
+    action = await api.contextMenu.show<PullRequestLinkContextMenuAction | Action>(
+      [...items, ...pullRequestLinkContextMenuItems(openLabel, items.length > 0)],
+      position,
+    );
   } catch {
+    return;
+  }
+  if (action === null) return;
+  if (action !== "copy-link" && action !== "open-external") {
+    onAction?.(action);
     return;
   }
   try {
     if (action === "copy-link") await writeTextToClipboard(url, "link");
-    else if (action === "open-external") await api.shell.openExternal(url);
+    else await api.shell.openExternal(url);
   } catch {
     toastManager.add({
       type: "error",

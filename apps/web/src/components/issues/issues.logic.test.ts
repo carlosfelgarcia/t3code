@@ -12,6 +12,8 @@ import {
   ISSUE_AUTHOR_ALL,
   issueAuthorIgnored,
   issueAuthorOptions,
+  issueBulkLabelChange,
+  issueBulkLabels,
   issueRepositories,
   issueRowLabels,
   projectsForRepository,
@@ -89,6 +91,90 @@ describe("issueRowLabels", () => {
     expect(issueRowLabels({ ...issue, updatedAt: "2026-10-03T10:00:05Z" }, edit)).toEqual(
       issue.labels,
     );
+  });
+});
+
+describe("issueBulkLabels", () => {
+  const bug = { name: "bug", color: "d73a4a", description: null, isApplied: false };
+  const docs = { name: "docs", color: "0075ca", description: "Documentation", isApplied: false };
+  const feature = { name: "feature", color: null, description: null, isApplied: false };
+  const web = (number: number, labels: ReadonlyArray<string>) => ({
+    host: "github.com",
+    repository: "acme/web",
+    number,
+    labels: labels.map((name) => ({ name, color: null })),
+  });
+  const first = web(1, ["bug", "docs"]);
+  const second = web(2, ["bug"]);
+
+  it("marks each label as on all, some or none of the selected issues", () => {
+    expect(
+      issueBulkLabels([first, second], new Map([["github.com/acme/web", [bug, docs, feature]]])),
+    ).toEqual({
+      labels: [
+        { name: "bug", color: "d73a4a", description: null, state: "all" },
+        { name: "docs", color: "0075ca", description: "Documentation", state: "some" },
+        { name: "feature", color: null, description: null, state: "none" },
+      ],
+      hidden: false,
+    });
+  });
+
+  it("offers only the labels every selected repository has, and says the rest are hidden", () => {
+    const api = { host: "github.com", repository: "Acme/API", number: 7, labels: [] };
+    const backend = { name: "backend", color: null, description: null, isApplied: false };
+    expect(
+      issueBulkLabels(
+        [first, api],
+        new Map([
+          ["github.com/acme/web", [bug, docs]],
+          ["github.com/acme/api", [backend, bug]],
+        ]),
+      ),
+    ).toEqual({
+      labels: [{ name: "bug", color: "d73a4a", description: null, state: "some" }],
+      hidden: true,
+    });
+  });
+});
+
+describe("issueBulkLabelChange", () => {
+  const web = (number: number, labels: ReadonlyArray<string>) => ({
+    host: "github.com",
+    repository: "acme/web",
+    number,
+    labels: labels.map((name) => ({ name, color: null })),
+  });
+  const first = web(1, ["bug", "docs"]);
+  const second = web(2, ["bug"]);
+
+  it("adds a label that some issues lack to the rest, keeping their other labels", () => {
+    expect(
+      issueBulkLabelChange([first, second], { name: "docs", color: "0075ca", state: "some" }),
+    ).toEqual({
+      applied: true,
+      changes: [
+        {
+          issue: second,
+          labels: [
+            { name: "bug", color: null },
+            { name: "docs", color: "0075ca" },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("removes a label that every selected issue has from all of them", () => {
+    expect(
+      issueBulkLabelChange([first, second], { name: "bug", color: "d73a4a", state: "all" }),
+    ).toEqual({
+      applied: false,
+      changes: [
+        { issue: first, labels: [{ name: "docs", color: null }] },
+        { issue: second, labels: [] },
+      ],
+    });
   });
 });
 

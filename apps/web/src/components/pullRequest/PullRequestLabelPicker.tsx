@@ -1,6 +1,6 @@
 import { useAtomCommand } from "~/state/use-atom-command";
 import type { EnvironmentId, PullRequestLabelCandidate, PullRequestRef } from "@t3tools/contracts";
-import { CheckIcon, TagIcon } from "lucide-react";
+import { CheckIcon, MinusIcon, TagIcon } from "lucide-react";
 import { useState } from "react";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
@@ -13,7 +13,7 @@ import { readableFailure } from "./pullRequestDetail.logic";
 import { pullRequestLabelColor } from "./pullRequestList.logic";
 
 export function labelCandidateMatches(
-  candidate: PullRequestLabelCandidate,
+  candidate: Pick<PullRequestLabelCandidate, "name" | "description">,
   query: string,
 ): boolean {
   if (query.length === 0) return true;
@@ -99,7 +99,14 @@ export function PullRequestLabelPicker({
   );
 }
 
-export function LabelCandidateRow({ candidate }: { candidate: PullRequestLabelCandidate }) {
+export function LabelCandidateRow({
+  candidate,
+  partial = false,
+}: {
+  candidate: PullRequestLabelCandidate;
+  /** On some of several items: shown as a dash rather than a check. */
+  partial?: boolean;
+}) {
   const dot = pullRequestLabelColor(candidate.color);
   return (
     <>
@@ -116,6 +123,8 @@ export function LabelCandidateRow({ candidate }: { candidate: PullRequestLabelCa
       </span>
       {candidate.isApplied ? (
         <CheckIcon aria-label="Applied" className="size-3.5 shrink-0" />
+      ) : partial ? (
+        <MinusIcon aria-label="Applied to some" className="size-3.5 shrink-0" />
       ) : null}
     </>
   );
