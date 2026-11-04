@@ -53,8 +53,9 @@ const ListKeyJson = Schema.fromJsonString(ListKey);
 const encodeListKey = Schema.encodeSync(ListKeyJson);
 const decodeListKey = Schema.decodeSync(ListKeyJson);
 
-const byNewestUpdate = (left: IssueSummary, right: IssueSummary) =>
-  right.updatedAt.localeCompare(left.updatedAt);
+// Matches GitHub's `sort=created`, so one repository reads in issue-number order.
+const byNewestCreated = (left: IssueSummary, right: IssueSummary) =>
+  right.createdAt.localeCompare(left.createdAt);
 
 /** Several projects, on several environments, can point at one repository; list it once. */
 const repositoriesByHost = (repositories: IssueListInput["repositories"]) => {
@@ -126,7 +127,7 @@ export const make = Effect.gen(function* () {
         seen.add(id);
         return true;
       })
-      .toSorted(byNewestUpdate);
+      .toSorted(byNewestCreated);
     return {
       issues,
       hasMore: reads.some(({ result }) => result._tag === "Success" && result.success.hasMore),

@@ -134,7 +134,7 @@ const summary = {
 };
 const ref = { host: "github.com", repository: "acme/web", number: 12 };
 
-it.effect("lists issues across repositories, newest update first, without pull requests", () =>
+it.effect("lists issues across repositories, newest first, without pull requests", () =>
   Effect.gen(function* () {
     const { calls, graphqlCalls, issues } = harness(() =>
       ok({
@@ -167,7 +167,7 @@ it.effect("lists issues across repositories, newest update first, without pull r
     expect(url.searchParams.get("q")).toBe(
       'crash in:title is:issue state:open repo:acme/web repo:acme/api label:"needs triage" author:OdCgarcia',
     );
-    expect(url.searchParams.get("sort")).toBe("updated");
+    expect(url.searchParams.get("sort")).toBe("created");
     expect(url.searchParams.get("order")).toBe("desc");
     expect(url.searchParams.get("per_page")).toBe("50");
     expect(url.searchParams.get("page")).toBe("2");
