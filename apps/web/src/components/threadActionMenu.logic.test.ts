@@ -32,6 +32,8 @@ describe("buildThreadActionMenuItems", () => {
       const items = buildThreadActionMenuItems({
         ...baseState,
         canOperate: false,
+        issueRepositories: [{ host: "github.com", repository: "acme/app" }],
+        canOpenGitTree: true,
         isPinned: reversed,
         isSettled: reversed,
         isSnoozed: reversed,
@@ -73,5 +75,26 @@ describe("buildThreadActionMenuItems", () => {
     });
     expect(items.find((item) => item.id === "archive")?.disabled).toBe(true);
     expect(items.find((item) => item.id === "turn-into-project")?.disabled).toBe(true);
+  });
+
+  it("offers one issues entry per project repository, as a submenu for a fork", () => {
+    const single = buildThreadActionMenuItems({
+      ...baseState,
+      issueRepositories: [{ host: "github.com", repository: "Acme/App" }],
+    });
+    expect(
+      single.filter((item) => item.id.startsWith("open-issues")).map((item) => item.id),
+    ).toEqual(["open-issues:github.com/acme/app"]);
+
+    const fork = buildThreadActionMenuItems({
+      ...baseState,
+      issueRepositories: [
+        { host: "github.com", repository: "acme/app" },
+        { host: "github.com", repository: "me/app" },
+      ],
+    });
+    expect(
+      fork.find((item) => item.id === "open-issues")?.children?.map((child) => child.id),
+    ).toEqual(["open-issues:github.com/acme/app", "open-issues:github.com/me/app"]);
   });
 });
