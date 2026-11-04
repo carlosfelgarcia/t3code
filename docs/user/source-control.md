@@ -268,7 +268,8 @@ from the repositories behind your projects, across your connected environments. 
 both its upstream repository and your own. Issues currently
 support GitHub only; projects on other hosts do not appear. Filter by repository, state, label,
 and issue author (who opened the issue), or search titles. With more than one environment
-connected, choose which one reads the list; it uses that environment's GitHub credentials.
+connected, choose which one reads the list; it uses that environment's GitHub credentials. To
+jump straight to one repository, right-click a thread and choose **Open issues**.
 
 The author menu lists the GitHub accounts signed in to `gh` on the environment that reads the
 list, active or not. To add a second account, run `gh auth login` for it, then
@@ -288,7 +289,8 @@ you send it, and the agent reads the rest of the issue itself. Issues are web an
 
 ## Git Tree
 
-**Git Tree**, at the bottom of the sidebar or in the command palette, shows one project's local
+**Git Tree**, at the bottom of the sidebar, in the command palette, or as **Open Git Tree** when you
+right-click a thread, shows one project's local
 branches and commit graph, and handles routine branch housekeeping. It always works on the
 project's own folder, never a thread's worktree. Branches show how far they are ahead of and
 behind their upstream, and mark an upstream that was deleted on the remote as **gone** once you

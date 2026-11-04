@@ -174,6 +174,7 @@ import {
 } from "../threadRoutes";
 import type { SidebarThreadSummary } from "../types";
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
+import { issueRepositories } from "./issues/issues.logic";
 import { cn } from "~/lib/utils";
 import { ProjectEnvironmentBadge } from "./ProjectEnvironmentBadge";
 import {
@@ -2608,10 +2609,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         }
         const thread = threadByKeyRef.current.get(threadKey);
         if (!thread) return;
-        const threadWorkspacePath =
-          thread.worktreePath ??
-          projectByKey.get(`${thread.environmentId}:${thread.projectId}`)?.workspaceRoot ??
-          null;
+        const threadProject = projectByKey.get(`${thread.environmentId}:${thread.projectId}`);
+        const threadWorkspacePath = thread.worktreePath ?? threadProject?.workspaceRoot ?? null;
+        const isRepositoryProject = threadProject !== undefined && threadProject.isScratch !== true;
         const configLoaded = serverConfigs.has(thread.environmentId);
         const supportsAutoSettleOptOut =
           serverConfigs.get(thread.environmentId)?.environment.capabilities
@@ -2660,6 +2660,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 canShareWithGuestAtom(threadRef.environmentId),
               ),
               canTurnIntoProject: canTurnThreadIntoProject(threadRef),
+              issueRepositories: threadProject ? issueRepositories([threadProject]) : [],
+              canOpenGitTree: isRepositoryProject,
               supports: {
                 settlement: configLoaded,
                 autoSettleOptOut: supportsAutoSettleOptOut,
@@ -2687,7 +2689,26 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           if (preset) attemptSnooze(threadRef, preset);
           return;
         }
+        if (clicked.value.startsWith("open-issues:")) {
+          if (isMobile) setOpenMobile(false);
+          void router.navigate({
+            to: "/issues",
+            search: {
+              state: "open",
+              repo: clicked.value.slice("open-issues:".length),
+              environmentId: thread.environmentId,
+            },
+          });
+          return;
+        }
         switch (clicked.value) {
+          case "open-git-tree":
+            if (isMobile) setOpenMobile(false);
+            void router.navigate({
+              to: "/git-tree",
+              search: { environmentId: thread.environmentId, projectId: thread.projectId },
+            });
+            return;
           case "filter-by-project":
             if (threadProjectGroup) {
               setProjectScopeKeys(

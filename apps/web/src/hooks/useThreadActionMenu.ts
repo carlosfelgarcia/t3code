@@ -41,6 +41,7 @@ import {
   derivePhysicalProjectKey,
   selectProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
+import { issueRepositories } from "../components/issues/issues.logic";
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import { useCopyToClipboard } from "./useCopyToClipboard";
@@ -132,6 +133,10 @@ export function useThreadActionMenu(input: {
         titleRegeneration: configLoaded,
       };
       const isRegeneratingTitle = thread.titleRegeneration != null;
+      const project = projects.find(
+        (candidate) =>
+          candidate.environmentId === thread.environmentId && candidate.id === thread.projectId,
+      );
       const snoozePresets = resolveSnoozePresets(now, timestampFormat, threadRef.environmentId);
       const items = buildThreadActionMenuItems({
         canOperate: readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope),
@@ -149,6 +154,8 @@ export function useThreadActionMenu(input: {
         snoozePresets,
         canShareWithGuest,
         canTurnIntoProject: canTurnThreadIntoProject(threadRef),
+        issueRepositories: project ? issueRepositories([project]) : [],
+        canOpenGitTree: project !== undefined && project.isScratch !== true,
       });
       const clicked = await settlePromise(() => api.contextMenu.show(items, position));
       if (clicked._tag === "Failure" || clicked.value === null) return;
@@ -180,6 +187,17 @@ export function useThreadActionMenu(input: {
         }
         return;
       }
+      if (action.startsWith("open-issues:")) {
+        void router.navigate({
+          to: "/issues",
+          search: {
+            state: "open",
+            repo: action.slice("open-issues:".length),
+            environmentId: threadRef.environmentId,
+          },
+        });
+        return;
+      }
       const reportFailure = async (
         title: string,
         run: () => Promise<AtomCommandResult<unknown, unknown>>,
@@ -193,11 +211,13 @@ export function useThreadActionMenu(input: {
         case "find":
           onFind?.(threadRef);
           return;
+        case "open-git-tree":
+          void router.navigate({
+            to: "/git-tree",
+            search: { environmentId: threadRef.environmentId, projectId: thread.projectId },
+          });
+          return;
         case "project-settings": {
-          const project = projects.find(
-            (candidate) =>
-              candidate.environmentId === thread.environmentId && candidate.id === thread.projectId,
-          );
           if (!project) return;
           const projectKey =
             logicalProjectKeyByPhysicalKey.get(derivePhysicalProjectKey(project)) ??

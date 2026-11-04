@@ -44,6 +44,18 @@ const ICON_PATHS: Record<string, ReadonlyArray<{ tag: string; attrs: Record<stri
       },
     },
   ],
+  "circle-dot": [
+    { tag: "circle", attrs: { cx: "12", cy: "12", r: "10" } },
+    { tag: "circle", attrs: { cx: "12", cy: "12", r: "1" } },
+  ],
+  "git-graph": [
+    { tag: "circle", attrs: { cx: "5", cy: "6", r: "3" } },
+    { tag: "path", attrs: { d: "M5 9v6" } },
+    { tag: "circle", attrs: { cx: "5", cy: "18", r: "3" } },
+    { tag: "path", attrs: { d: "M12 3v18" } },
+    { tag: "circle", attrs: { cx: "19", cy: "6", r: "3" } },
+    { tag: "path", attrs: { d: "M16 15.7A9 9 0 0 0 19 9" } },
+  ],
   "git-branch": [
     { tag: "line", attrs: { x1: "6", x2: "6", y1: "3", y2: "15" } },
     { tag: "circle", attrs: { cx: "18", cy: "6", r: "3" } },
