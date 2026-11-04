@@ -4306,6 +4306,157 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
     );
   });
 
+  describe("branch housekeeping", () => {
+    const commitFile = (cwd: string, name: string, subject: string) =>
+      Effect.gen(function* () {
+        yield* writeTextFile(cwd, name, `${subject}\n`);
+        yield* git(cwd, ["add", "-A"]);
+        yield* git(cwd, ["commit", "-q", "-m", subject]);
+        return yield* git(cwd, ["rev-parse", "HEAD"]);
+      });
+
+    it.effect("reads the graph of local branches, their upstreams and the default branch", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const remote = yield* makeTmpDir("git-vcs-driver-remote-");
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const initial = yield* git(cwd, ["rev-parse", "HEAD"]);
+        yield* git(remote, ["init", "--bare"]);
+        yield* git(cwd, ["remote", "add", "origin", remote]);
+        yield* git(cwd, ["push", "-q", "-u", "origin", initialBranch]);
+        yield* git(cwd, ["remote", "set-head", "origin", initialBranch]);
+
+        yield* git(cwd, ["checkout", "-q", "-b", "feature"]);
+        const feature = yield* commitFile(cwd, "feature.txt", "feature work");
+        yield* git(cwd, ["checkout", "-q", initialBranch]);
+        const mainWork = yield* commitFile(cwd, "main.txt", "main work");
+        yield* git(cwd, ["merge", "-q", "--no-ff", "-m", "merge feature", "feature"]);
+        const merge = yield* git(cwd, ["rev-parse", "HEAD"]);
+
+        yield* git(cwd, ["checkout", "-q", "-b", "topic", initial]);
+        const pushedTopic = yield* commitFile(cwd, "topic.txt", "topic on remote only");
+        yield* git(cwd, ["push", "-q", "-u", "origin", "topic"]);
+        yield* git(cwd, ["reset", "-q", "--hard", initial]);
+
+        yield* git(cwd, ["checkout", "-q", "--orphan", "unrelated"]);
+        yield* commitFile(cwd, "unrelated.txt", "unrelated remote work");
+        yield* git(cwd, ["push", "-q", "origin", "unrelated"]);
+        yield* git(cwd, ["checkout", "-q", "-f", initialBranch]);
+        yield* git(cwd, ["branch", "-q", "-D", "unrelated"]);
+
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const graph = yield* driver.readCommitGraph({ cwd });
+        assert.equal(graph.isRepo, true);
+        assert.equal(graph.nextCursor, null);
+        const byHash = new Map(graph.commits.map((commit) => [commit.hash, commit]));
+        assert.deepEqual(
+          [...byHash.keys()].toSorted(),
+          [initial, feature, mainWork, merge, pushedTopic].toSorted(),
+        );
+        assert.deepEqual(byHash.get(merge)?.parents, [mainWork, feature]);
+        assert.deepEqual(byHash.get(initial)?.parents, []);
+        assert.deepInclude(byHash.get(merge), {
+          subject: "merge feature",
+          message: "merge feature",
+          authorName: "Test",
+        });
+        assert.deepEqual(byHash.get(merge)?.refs, [initialBranch]);
+        assert.deepEqual(byHash.get(feature)?.refs, ["feature"]);
+        assert.deepEqual(byHash.get(pushedTopic)?.refs, ["origin/topic"]);
+        // Local branches label a commit before remote ones.
+        assert.deepEqual(byHash.get(initial)?.refs, ["topic", `origin/${initialBranch}`]);
+        // Children come before their parents, as the lane layout needs.
+        const order = graph.commits.map((commit) => commit.hash);
+        assert.isBelow(order.indexOf(merge), order.indexOf(feature));
+        assert.isBelow(order.indexOf(feature), order.indexOf(initial));
+
+        const first = yield* driver.readCommitGraph({ cwd, limit: 2 });
+        assert.equal(first.commits.length, 2);
+        assert.equal(first.nextCursor, 2);
+        const rest = yield* driver.readCommitGraph({ cwd, cursor: 2, limit: 2 });
+        assert.equal(rest.nextCursor, 4);
+        const last = yield* driver.readCommitGraph({ cwd, cursor: 4, limit: 2 });
+        assert.equal(last.nextCursor, null);
+        assert.deepEqual(
+          [...first.commits, ...rest.commits, ...last.commits].map((commit) => commit.hash),
+          order,
+        );
+      }),
+    );
+
+    it.effect("reports tracking counts, and a gone upstream once fetch and prune drops it", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const remote = yield* makeTmpDir("git-vcs-driver-remote-");
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        const initial = yield* git(cwd, ["rev-parse", "HEAD"]);
+        yield* git(remote, ["init", "--bare"]);
+        yield* git(cwd, ["remote", "add", "origin", remote]);
+        yield* git(cwd, ["push", "-q", "-u", "origin", initialBranch]);
+        yield* git(cwd, ["checkout", "-q", "-b", "diverged"]);
+        yield* commitFile(cwd, "remote.txt", "remote side");
+        yield* git(cwd, ["push", "-q", "-u", "origin", "diverged"]);
+        yield* git(cwd, ["reset", "-q", "--hard", initial]);
+        yield* commitFile(cwd, "local-a.txt", "local a");
+        yield* commitFile(cwd, "local-b.txt", "local b");
+        yield* git(cwd, ["checkout", "-q", "-b", "finished", initial]);
+        yield* git(cwd, ["push", "-q", "-u", "origin", "finished"]);
+        yield* git(cwd, ["checkout", "-q", initialBranch]);
+        yield* git(remote, ["--git-dir=.", "branch", "-q", "-D", "finished"]);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+        const tracking = (refs: VcsListRefsResult) =>
+          Object.fromEntries(
+            refs.refs.map((ref) => [
+              ref.name,
+              { ahead: ref.ahead, behind: ref.behind, upstreamGone: ref.upstreamGone },
+            ]),
+          );
+
+        assert.deepEqual(tracking(yield* driver.listRefs({ cwd, refKind: "local" })), {
+          [initialBranch]: { ahead: 0, behind: 0, upstreamGone: false },
+          diverged: { ahead: 2, behind: 1, upstreamGone: false },
+          finished: { ahead: 0, behind: 0, upstreamGone: false },
+        });
+
+        yield* driver.fetchPrune({ cwd });
+        assert.equal(
+          yield* git(cwd, ["for-each-ref", "--format=%(refname)", "refs/remotes/origin/finished"]),
+          "",
+        );
+        const pruned = yield* driver.listRefs({ cwd, refKind: "local" });
+        assert.deepEqual(tracking(pruned).finished, {
+          ahead: undefined,
+          behind: undefined,
+          upstreamGone: true,
+        });
+        assert.deepEqual(
+          pruned.refs.map((ref) => decodeVcsRef(ref)),
+          pruned.refs,
+        );
+      }),
+    );
+
+    it.effect("refuses to delete an unmerged branch unless forced", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const { initialBranch } = yield* initRepoWithCommit(cwd);
+        yield* git(cwd, ["checkout", "-q", "-b", "unmerged"]);
+        yield* commitFile(cwd, "unmerged.txt", "unmerged work");
+        yield* git(cwd, ["checkout", "-q", initialBranch]);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        const refused = yield* driver
+          .deleteLocalBranch({ cwd, refName: "unmerged" })
+          .pipe(Effect.flip);
+        assert.equal(refused.reason, "branch_not_merged");
+        assert.deepEqual(yield* driver.listLocalBranchNames(cwd), [initialBranch, "unmerged"]);
+
+        yield* driver.deleteLocalBranch({ cwd, refName: "unmerged", force: true });
+        assert.deepEqual(yield* driver.listLocalBranchNames(cwd), [initialBranch]);
+      }),
+    );
+  });
+
   describe("worktree operations", () => {
     it.effect("uses parallel checkout without skipping filters or hooks", () =>
       Effect.gen(function* () {

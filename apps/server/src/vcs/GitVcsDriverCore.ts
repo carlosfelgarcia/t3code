@@ -31,6 +31,9 @@ import {
   type ReviewDiffPreviewInput,
   type ReviewDiffFileStat,
   type ReviewDiffPreviewSource,
+  GIT_COMMIT_GRAPH_DEFAULT_LIMIT,
+  type VcsCommitGraphCommit,
+  type VcsCommitGraphInput,
   type VcsRef,
 } from "@t3tools/contracts";
 import { dedupeRemoteBranchesWithLocalMatches } from "@t3tools/shared/git";
@@ -106,6 +109,15 @@ const REPOSITORY_PATHS_REFRESH_COALESCE_TTL = Duration.seconds(5);
 const NON_REPOSITORY_PATHS_CACHE_TTL = Duration.seconds(1);
 const LIST_REFS_SNAPSHOT_CACHE_CAPACITY = 64;
 const LIST_REFS_SNAPSHOT_CACHE_TTL = Duration.minutes(2);
+const COMMIT_GRAPH_MESSAGE_LIMIT = 4_000;
+const COMMIT_GRAPH_FIELD_COUNT = 6;
+
+/** Reads `%(upstream:track,nobracket)`: "ahead 1, behind 2", "gone", or empty when even. */
+function parseUpstreamTrack(track: string): Pick<VcsRef, "ahead" | "behind" | "upstreamGone"> {
+  if (track.trim() === "gone") return { upstreamGone: true };
+  const count = (pattern: RegExp) => Number.parseInt(pattern.exec(track)?.[1] ?? "0", 10);
+  return { ahead: count(/ahead (\d+)/), behind: count(/behind (\d+)/), upstreamGone: false };
+}
 const LIST_REFS_REFRESH_COALESCE_TTL = Duration.seconds(5);
 const LIST_REFS_REFRESH_FAILURE_COOLDOWN = Duration.seconds(30);
 const STATUS_DEFAULT_BRANCH_CACHE_TTL = Duration.minutes(5);
@@ -443,7 +455,11 @@ function gitCommandContext(
 // Stderr can echo credentials from argv/URLs; classify fixed patterns without exposing matched text.
 const GIT_FAILURE_REASON_PATTERNS: ReadonlyArray<readonly [RegExp, GitCommandFailureReason]> = [
   [/would clobber existing tag/i, "tag_would_be_clobbered"],
-  [/is already (?:used by worktree at|checked out at)/i, "branch_checked_out_in_worktree"],
+  [
+    /is already (?:used by worktree at|checked out at)|cannot delete branch .+ (?:used by worktree at|checked out at)/i,
+    "branch_checked_out_in_worktree",
+  ],
+  [/^error: the branch .+ is not fully merged/im, "branch_not_merged"],
   [/a branch named .+ already exists/i, "branch_already_exists"],
   // The same prefix also reports permission errors, which retrying cannot fix.
   [/could not lock config file .+: File exists/i, "config_locked"],
@@ -3894,7 +3910,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           [
             ...gitDirArgs,
             "for-each-ref",
-            "--format=%(refname)%09%(committerdate:unix)%09%(symref)%09%(upstream)",
+            "--format=%(refname)%09%(committerdate:unix)%09%(symref)%09%(upstream)%09%(upstream:track,nobracket)",
             "refs/heads",
             "refs/remotes",
           ],
@@ -3963,7 +3979,8 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
     for (const line of refsResult.stdout.split("\n")) {
       if (line.length === 0) continue;
-      const [fullRefName, lastCommitRaw, symbolicTarget, upstreamRef] = line.split("\t");
+      const [fullRefName, lastCommitRaw, symbolicTarget, upstreamRef, upstreamTrack] =
+        line.split("\t");
       if (!fullRefName || symbolicTarget) continue;
       const parsedLastCommit = Number.parseInt(lastCommitRaw ?? "0", 10);
       const lastCommit = Number.isFinite(parsedLastCommit) ? parsedLastCommit : 0;
@@ -3977,7 +3994,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             isRemote: false,
             isDefault: name === defaultBranch,
             worktreePath: worktreeMap.get(name) ?? null,
-            ...(upstreamRef ? { upstreamRef } : {}),
+            ...(upstreamRef ? { upstreamRef, ...parseUpstreamTrack(upstreamTrack ?? "") } : {}),
           },
           lastCommit,
         });
@@ -4815,7 +4832,148 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         // Under contention Git deletes the ref but keeps its config section.
         writesSharedConfig: true,
       },
+    ).pipe(
+      Effect.mapError((error) => {
+        const detail =
+          error.reason === "branch_not_merged"
+            ? `${input.refName} has commits that are not merged. Force delete it to discard them.`
+            : error.reason === "branch_checked_out_in_worktree"
+              ? `${input.refName} is checked out in a worktree.`
+              : null;
+        return detail === null ? error : new GitCommandError({ ...error, detail });
+      }),
     );
+  });
+
+  const fetchPrune = Effect.fn("fetchPrune")(function* (input: { readonly cwd: string }) {
+    const args = ["fetch", "--all", "--prune", "--quiet"];
+    const run = executeGitWithStableDiagnostics("GitVcsDriver.fetchPrune", input.cwd, args, {
+      env: STATUS_UPSTREAM_REFRESH_ENV,
+      timeoutMs: 300_000,
+      allowNonZeroExit: true,
+    });
+    // A background status fetch can hold a remote-tracking ref lock; it is free on a rerun.
+    let result = yield* run;
+    if (result.exitCode !== 0 && isRefLockFailure(result.stderr)) result = yield* run;
+    if (result.exitCode === 0) return;
+    const reason = classifyGitFailure(result.stderr);
+    return yield* new GitCommandError({
+      ...gitCommandContext({ operation: "GitVcsDriver.fetchPrune", cwd: input.cwd, args }),
+      ...(reason === null ? {} : { reason }),
+      detail: fetchFailureDetail(result.stderr) ?? "git fetch --prune failed",
+      exitCode: result.exitCode,
+      stdoutLength: result.stdout.length,
+      stderrLength: result.stderr.length,
+    });
+  });
+
+  const readCommitGraph = Effect.fn("readCommitGraph")(function* (input: VcsCommitGraphInput) {
+    const limit = input.limit ?? GIT_COMMIT_GRAPH_DEFAULT_LIMIT;
+    const cursor = input.cursor ?? 0;
+    const [refsResult, defaultRefResult, headRefResult] = yield* Effect.all(
+      [
+        executeGit(
+          "GitVcsDriver.readCommitGraph.refs",
+          input.cwd,
+          [
+            "for-each-ref",
+            "--format=%(objectname)%09%(refname)%09%(symref)%09%(upstream)%09%(upstream:track,nobracket)",
+            "refs/heads",
+            "refs/remotes",
+          ],
+          { timeoutMs: 30_000, maxOutputBytes: 16 * 1024 * 1024 },
+        ),
+        executeGit(
+          "GitVcsDriver.readCommitGraph.defaultRef",
+          input.cwd,
+          ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"],
+          { timeoutMs: 5_000, allowNonZeroExit: true },
+        ),
+        executeGit(
+          "GitVcsDriver.readCommitGraph.head",
+          input.cwd,
+          ["symbolic-ref", "--quiet", "HEAD"],
+          { timeoutMs: 5_000, allowNonZeroExit: true },
+        ),
+      ],
+      { concurrency: "unbounded" },
+    );
+
+    const labelsByCommit = new Map<string, string[]>();
+    const addLabel = (commit: string, label: string) => {
+      const labels = labelsByCommit.get(commit);
+      if (labels) labels.push(label);
+      else labelsByCommit.set(commit, [label]);
+    };
+    const tips = new Set<string>();
+    const wantedRemoteRefs = new Set<string>();
+    const remoteRefCommits = new Map<string, string>();
+    for (const line of refsResult.stdout.split("\n")) {
+      const [commit, refName, symbolicTarget, upstreamRef, upstreamTrack] = line.split("\t");
+      if (!commit || !refName || symbolicTarget) continue;
+      if (refName.startsWith("refs/heads/")) {
+        tips.add(refName);
+        addLabel(commit, refName.slice("refs/heads/".length));
+        if (upstreamRef && upstreamTrack?.trim() !== "gone") wantedRemoteRefs.add(upstreamRef);
+      } else if (refName.startsWith("refs/remotes/")) {
+        remoteRefCommits.set(refName, commit);
+      }
+    }
+    if (defaultRefResult.exitCode === 0) wantedRemoteRefs.add(defaultRefResult.stdout.trim());
+    for (const [refName, commit] of remoteRefCommits) {
+      if (!wantedRemoteRefs.has(refName)) continue;
+      tips.add(refName);
+      addLabel(commit, refName.slice("refs/remotes/".length));
+    }
+    // Exit 1 is a detached HEAD; anything else, such as an unborn branch, has no commit to add.
+    if (headRefResult.exitCode === 1 && headRefResult.stderr.trim() === "") tips.add("HEAD");
+    if (tips.size === 0) return { isRepo: true, commits: [], nextCursor: null };
+
+    const result = yield* executeGit(
+      "GitVcsDriver.readCommitGraph.log",
+      input.cwd,
+      [
+        "log",
+        "--stdin",
+        "--date-order",
+        "-z",
+        "--no-notes",
+        "--no-show-signature",
+        "--no-color",
+        `--skip=${cursor}`,
+        `--max-count=${limit + 1}`,
+        "--format=%H%x00%P%x00%an%x00%aI%x00%s%x00%B",
+      ],
+      {
+        stdin: `${[...tips].join("\n")}\n`,
+        timeoutMs: 30_000,
+        maxOutputBytes: 32 * 1024 * 1024,
+      },
+    );
+    const fields = result.stdout.split("\0");
+    const commits: VcsCommitGraphCommit[] = [];
+    for (let index = 0; index + COMMIT_GRAPH_FIELD_COUNT <= fields.length;) {
+      const [hash, parents, authorName, authorDate, subject, message] = fields.slice(
+        index,
+        index + COMMIT_GRAPH_FIELD_COUNT,
+      );
+      index += COMMIT_GRAPH_FIELD_COUNT;
+      if (!hash) continue;
+      commits.push({
+        hash,
+        parents: parents ? parents.split(" ").filter(Boolean) : [],
+        subject: subject ?? "",
+        message: (message ?? "").trimEnd().slice(0, COMMIT_GRAPH_MESSAGE_LIMIT),
+        authorName: authorName ?? "",
+        authorDate: authorDate ?? "",
+        refs: labelsByCommit.get(hash) ?? [],
+      });
+    }
+    return {
+      isRepo: true,
+      commits: commits.slice(0, limit),
+      nextCursor: commits.length > limit ? cursor + limit : null,
+    };
   });
 
   const renameBranch: GitVcsDriver.GitVcsDriver["Service"]["renameBranch"] = Effect.fn(
@@ -5093,6 +5251,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         ),
       );
     }),
+    fetchPrune: Effect.fnUntraced(function* (input) {
+      return yield* withListRefsInvalidation(input.cwd, fetchPrune(input));
+    }),
+    readCommitGraph,
     remoteExists,
     remoteBranchExists,
     resolveRemoteTrackingCommit,

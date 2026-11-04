@@ -3075,6 +3075,21 @@ export const layerWsRpc = (
                 refreshGitStatus(input.cwd).pipe(Effect.ignore({ log: true }), Effect.as(result)),
             }),
           ),
+        [WS_METHODS.vcsPush]: (input) =>
+          gitWorkflow
+            .pushCurrentBranch(input.cwd)
+            .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsFetchPrune]: (input) =>
+          gitWorkflow.fetchPrune(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsDeleteBranch]: (input) =>
+          gitWorkflow
+            .deleteLocalBranch({
+              cwd: input.cwd,
+              refName: input.refName,
+              ...(input.force === undefined ? {} : { force: input.force }),
+            })
+            .pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
+        [WS_METHODS.vcsCommitGraph]: (input) => gitWorkflow.readCommitGraph(input),
         [WS_METHODS.gitRunStackedAction]: (input) =>
           Stream.callback<GitActionProgressEvent, GitManagerServiceError>((queue) =>
             gitWorkflow

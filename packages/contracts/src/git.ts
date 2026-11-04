@@ -89,6 +89,10 @@ export const VcsRef = Schema.Struct({
   current: Schema.Boolean,
   isDefault: Schema.Boolean,
   worktreePath: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
+  // Local refs with an upstream only; absent when Git did not report tracking info.
+  ahead: Schema.optional(NonNegativeInt),
+  behind: Schema.optional(NonNegativeInt),
+  upstreamGone: Schema.optional(Schema.Boolean),
 });
 export type VcsRef = typeof VcsRef.Type;
 
@@ -122,6 +126,53 @@ export const VcsPullInput = Schema.Struct({
   cwd: TrimmedNonEmptyStringSchema,
 });
 export type VcsPullInput = typeof VcsPullInput.Type;
+
+export const VcsPushInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+});
+export type VcsPushInput = typeof VcsPushInput.Type;
+
+export const VcsFetchPruneInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+});
+export type VcsFetchPruneInput = typeof VcsFetchPruneInput.Type;
+
+export const VcsDeleteBranchInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  refName: TrimmedNonEmptyStringSchema,
+  force: Schema.optional(Schema.Boolean),
+});
+export type VcsDeleteBranchInput = typeof VcsDeleteBranchInput.Type;
+
+export const GIT_COMMIT_GRAPH_DEFAULT_LIMIT = 200;
+export const GIT_COMMIT_GRAPH_MAX_LIMIT = 1_000;
+
+export const VcsCommitGraphInput = Schema.Struct({
+  cwd: TrimmedNonEmptyStringSchema,
+  /** Commits to skip, from a previous page's `nextCursor`. */
+  cursor: Schema.optional(NonNegativeInt),
+  limit: Schema.optional(PositiveInt.check(Schema.isLessThanOrEqualTo(GIT_COMMIT_GRAPH_MAX_LIMIT))),
+});
+export type VcsCommitGraphInput = typeof VcsCommitGraphInput.Type;
+
+export const VcsCommitGraphCommit = Schema.Struct({
+  hash: TrimmedNonEmptyStringSchema,
+  parents: Schema.Array(TrimmedNonEmptyStringSchema),
+  subject: Schema.String,
+  message: Schema.String,
+  authorName: Schema.String,
+  authorDate: Schema.String,
+  /** Branch names pointing at this commit: local names, and remote ones as `remote/branch`. */
+  refs: Schema.Array(TrimmedNonEmptyStringSchema),
+});
+export type VcsCommitGraphCommit = typeof VcsCommitGraphCommit.Type;
+
+export const VcsCommitGraphResult = Schema.Struct({
+  isRepo: Schema.Boolean,
+  commits: Schema.Array(VcsCommitGraphCommit),
+  nextCursor: NonNegativeInt.pipe(Schema.NullOr),
+});
+export type VcsCommitGraphResult = typeof VcsCommitGraphResult.Type;
 
 export const GitRunStackedActionInput = Schema.Struct({
   actionId: TrimmedNonEmptyStringSchema,
@@ -347,6 +398,14 @@ export const VcsPullResult = Schema.Struct({
 });
 export type VcsPullResult = typeof VcsPullResult.Type;
 
+export const VcsPushResult = Schema.Struct({
+  status: Schema.Literals(["pushed", "skipped_up_to_date"]),
+  refName: TrimmedNonEmptyStringSchema,
+  upstreamRef: TrimmedNonEmptyStringSchema.pipe(Schema.NullOr),
+  setUpstream: Schema.Boolean,
+});
+export type VcsPushResult = typeof VcsPushResult.Type;
+
 // Git stderr can echo credentials from argv and remote URLs. Only a fixed
 // reason reaches the error and its diagnostic suffix; newer, unknown reasons
 // decode as absent through GitCommandError.
@@ -354,6 +413,7 @@ export const GitCommandFailureReason = Schema.Literals([
   "authentication_failed",
   "branch_already_exists",
   "branch_checked_out_in_worktree",
+  "branch_not_merged",
   "config_locked",
   "host_key_unverified",
   "not_a_repository",

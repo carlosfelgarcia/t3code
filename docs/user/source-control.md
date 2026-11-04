@@ -286,6 +286,29 @@ refuses the change, the label goes back and T3 Code says why. **Start thread** o
 issue's project with the issue's number, title, and link in the composer. Nothing is sent until
 you send it, and the agent reads the rest of the issue itself. Issues are web and desktop only.
 
+## Git Tree
+
+**Git Tree**, at the bottom of the sidebar or in the command palette, shows one project's local
+branches and commit graph, and handles routine branch housekeeping. It always works on the
+project's own folder, never a thread's worktree. Branches show how far they are ahead of and
+behind their upstream, and mark an upstream that was deleted on the remote as **gone** once you
+run **Fetch & prune**. The graph covers local branches, their upstreams and the default branch,
+200 commits at a time.
+
+**Pull** only fast-forwards the current branch. **Push** sets the upstream the first time and
+never force-pushes; if the remote has commits you don't, pull first. Deleting a branch with
+unmerged commits asks before force deleting it, and the current branch or one checked out in a
+worktree can't be deleted.
+
+**Clean Repo** starts a thread titled "Clean repo" in the project's folder with the project's
+default model, and sends it at once. Its agent brings `main` or `master` up to date, removes local
+branches and prunes remotes. It keeps branches that are unmerged or checked out in a worktree and
+lists them, and if the folder has uncommitted changes it stops and tells you rather than stashing
+or committing them.
+
+Git Tree refreshes when T3 Code sees the checkout's status change. Use its refresh button after
+changing the repository from a terminal or another app. Git Tree is web and desktop only.
+
 ## Troubleshooting
 
 - **Not authenticated:** run the provider's login command on the server, then rescan. For Bitbucket,

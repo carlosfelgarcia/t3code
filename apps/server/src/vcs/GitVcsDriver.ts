@@ -29,6 +29,8 @@ import {
   type VcsInitInput,
   type VcsListRefsInput,
   type VcsListRefsResult,
+  type VcsCommitGraphInput,
+  type VcsCommitGraphResult,
   type VcsPullResult,
   type VcsRemoveWorktreeInput,
   type VcsStatusInput,
@@ -388,6 +390,11 @@ export class GitVcsDriver extends Context.Service<
       remoteName: string,
     ) => Effect.Effect<string | null, GitCommandError>;
     readonly fetchRemote: (input: GitFetchRemoteInput) => Effect.Effect<void, GitCommandError>;
+    /** Fetches every remote and drops remote-tracking refs their remotes no longer have. */
+    readonly fetchPrune: (input: { readonly cwd: string }) => Effect.Effect<void, GitCommandError>;
+    readonly readCommitGraph: (
+      input: VcsCommitGraphInput,
+    ) => Effect.Effect<VcsCommitGraphResult, GitCommandError>;
     readonly remoteExists: (input: GitRemoteExistsInput) => Effect.Effect<boolean, GitCommandError>;
     readonly remoteBranchExists: (
       input: GitRemoteBranchExistsInput,
