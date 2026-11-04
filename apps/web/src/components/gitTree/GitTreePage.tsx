@@ -1,0 +1,543 @@
+import { useAtomValue } from "@effect/atom-react";
+import type { LegendListRef } from "@legendapp/list/react";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
+import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import {
+  AuthOrchestrationOperateScope,
+  type EnvironmentId,
+  type ProjectId,
+  type VcsRef,
+} from "@t3tools/contracts";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { useNavigate, useSearch } from "@tanstack/react-router";
+import * as Cause from "effect/Cause";
+import * as Option from "effect/Option";
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  BrushCleaningIcon,
+  FolderGit2Icon,
+  FolderTreeIcon,
+  GitBranchIcon,
+  RefreshCwIcon,
+  Trash2Icon,
+} from "lucide-react";
+import { useRef, useState } from "react";
+
+import { requestConfirmDialog } from "~/confirmDialog";
+import { isElectron } from "~/env";
+import { useEnvironmentSettings } from "~/hooks/useSettings";
+import { cn, newMessageId, newThreadId } from "~/lib/utils";
+import { resolveProjectDefaultProviderModelSelection } from "~/providerInstances";
+import { useProjects } from "~/state/entities";
+import {
+  useEnvironmentProviders,
+  useEnvironments,
+  usePrimaryEnvironmentId,
+} from "~/state/environments";
+import { useEnvironmentScope } from "~/state/session";
+import { threadEnvironment } from "~/state/threads";
+import { useAtomCommand } from "~/state/use-atom-command";
+import { useOrchestrationCommand } from "~/state/use-orchestration-command";
+import { vcsEnvironment } from "~/state/vcs";
+import { buildThreadRouteParams } from "~/threadRoutes";
+import { DEFAULT_RUNTIME_MODE } from "~/types";
+
+import { Badge } from "../ui/badge";
+import { Button } from "../ui/button";
+import { RefreshIcon } from "../ui/refresh-icon";
+import { SidebarInset } from "../ui/sidebar";
+import { Spinner } from "../ui/spinner";
+import { toastManager } from "../ui/toast";
+import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
+import { WorkspacePageHeader } from "../WorkspacePageHeader";
+import { PullRequestCompactFilterMenu } from "../pullRequest/PullRequestCompactFilterMenu";
+import { GitTreeGraph, type GitTreeGraphItem } from "./GitTreeGraph";
+import { gitCommandErrorDetail, useGitTreeData } from "./useGitTreeData";
+
+export interface GitTreeSearch {
+  readonly environmentId?: EnvironmentId;
+  readonly projectId?: ProjectId;
+}
+
+const CLEAN_REPO_PROMPT =
+  "Clean this repo by making sure master/main local branch is up to date (fix any conflicts if need it), removing local branches and prune remote. Do not delete branches that are checked out in a worktree or not yet merged; list those instead. If the working tree has uncommitted changes, stop and tell me instead of stashing or committing them.";
+
+const projectKey = (project: Pick<EnvironmentProject, "environmentId" | "id">) =>
+  JSON.stringify([project.environmentId, project.id]);
+
+export function GitTreePage() {
+  const search = useSearch({ from: "/_chat/git-tree" });
+  const navigate = useNavigate({ from: "/git-tree" });
+  const { environments } = useEnvironments();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
+  const projects = useProjects()
+    .filter((project) => project.isScratch !== true)
+    .toSorted(
+      (left, right) =>
+        Number(right.environmentId === primaryEnvironmentId) -
+          Number(left.environmentId === primaryEnvironmentId) ||
+        left.title.localeCompare(right.title),
+    );
+  const project =
+    projects.find(
+      (candidate) =>
+        candidate.id === search.projectId && candidate.environmentId === search.environmentId,
+    ) ??
+    projects[0] ??
+    null;
+  const multipleEnvironments = new Set(projects.map((entry) => entry.environmentId)).size > 1;
+  const environmentLabel = (environmentId: EnvironmentId) =>
+    environments.find((environment) => environment.environmentId === environmentId)?.label ??
+    environmentId;
+  const projectOptions = projects.map((entry) => ({
+    value: projectKey(entry),
+    label: multipleEnvironments
+      ? `${entry.title} · ${environmentLabel(entry.environmentId)}`
+      : entry.title,
+    Icon: FolderGit2Icon,
+  }));
+  const selectProject = (key: string) => {
+    const next = projects.find((entry) => projectKey(entry) === key);
+    if (next === undefined) return;
+    void navigate({
+      search: { environmentId: next.environmentId, projectId: next.id },
+      replace: true,
+    });
+  };
+
+  return (
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
+      {project === null ? (
+        <>
+          <GitTreeHeader />
+          <PageMessage>Add a project to see its Git tree.</PageMessage>
+        </>
+      ) : (
+        <GitTreeView
+          key={projectKey(project)}
+          project={project}
+          projectPicker={
+            projectOptions.length > 1 ? (
+              <PullRequestCompactFilterMenu
+                label="Project"
+                outlined
+                value={projectKey(project)}
+                options={projectOptions}
+                onChange={selectProject}
+              />
+            ) : null
+          }
+        />
+      )}
+    </SidebarInset>
+  );
+}
+
+function GitTreeHeader({ children }: { children?: React.ReactNode }) {
+  return (
+    <WorkspacePageHeader electron={isElectron} className="relative bg-background">
+      <WorkspaceBreadcrumb ariaLabel="Git Tree breadcrumb">
+        <WorkspaceBreadcrumbItem current>
+          <h1 className="truncate">Git Tree</h1>
+        </WorkspaceBreadcrumbItem>
+      </WorkspaceBreadcrumb>
+      <div className="min-w-0 flex-1" />
+      {children}
+    </WorkspacePageHeader>
+  );
+}
+
+function PageMessage({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 px-4 py-8 text-sm text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
+type Operation = "pull" | "push" | "fetch" | "clean" | "refresh";
+
+function failureOf(result: { readonly cause: Cause.Cause<unknown> }): unknown {
+  return Option.getOrElse(Cause.findErrorOption(result.cause), () =>
+    squashAtomCommandFailure(result),
+  );
+}
+
+function GitTreeView({
+  project,
+  projectPicker,
+}: {
+  project: EnvironmentProject;
+  projectPicker: React.ReactNode;
+}) {
+  const { environmentId } = project;
+  const cwd = project.workspaceRoot;
+  const navigate = useNavigate();
+  const { data, error, loadingMore, reload, loadMore } = useGitTreeData(environmentId, cwd);
+  const [running, setRunning] = useState<Operation | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const listRef = useRef<LegendListRef>(null);
+
+  const pull = useAtomCommand(vcsEnvironment.pull, { reportFailure: false });
+  const push = useAtomCommand(vcsEnvironment.push, { reportFailure: false });
+  const fetchPrune = useAtomCommand(vcsEnvironment.fetchPrune, { reportFailure: false });
+  const deleteBranch = useAtomCommand(vcsEnvironment.deleteBranch, { reportFailure: false });
+  const startTurn = useOrchestrationCommand(threadEnvironment.startTurn, { reportFailure: false });
+  const canWrite = useAtomValue(vcsEnvironment.push.permissionAtom(environmentId));
+  const canOperate = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  const settings = useEnvironmentSettings(environmentId);
+  const providers = useEnvironmentProviders().get(environmentId) ?? [];
+
+  const run = async (operation: Operation, title: string, action: () => Promise<string | null>) => {
+    if (running !== null) return;
+    setRunning(operation);
+    const outcome = await action().then(
+      (success) => ({ success, failure: null }),
+      (cause: unknown) => ({ success: null, failure: gitCommandErrorDetail(cause) }),
+    );
+    setRunning(null);
+    if (outcome.failure !== null) {
+      toastManager.add({ type: "error", title, description: outcome.failure });
+    } else if (outcome.success !== null) {
+      toastManager.add({ type: "success", title: outcome.success });
+    }
+    await reload();
+  };
+
+  const runPull = () =>
+    run("pull", "Pull failed", async () => {
+      const result = await pull({ environmentId, input: { cwd } });
+      if (result._tag === "Failure") throw failureOf(result);
+      return result.value.status === "pulled"
+        ? `Pulled ${result.value.refName}`
+        : `${result.value.refName} is up to date`;
+    });
+  const runPush = () =>
+    run("push", "Push failed", async () => {
+      const result = await push({ environmentId, input: { cwd } });
+      if (result._tag === "Failure") throw failureOf(result);
+      return result.value.status === "pushed"
+        ? `Pushed ${result.value.refName}${result.value.upstreamRef ? ` to ${result.value.upstreamRef}` : ""}`
+        : `${result.value.refName} is up to date`;
+    });
+  const runFetchPrune = () =>
+    run("fetch", "Fetch failed", async () => {
+      const result = await fetchPrune({ environmentId, input: { cwd } });
+      if (result._tag === "Failure") throw failureOf(result);
+      return "Fetched and pruned remotes";
+    });
+  const runRefresh = () => run("refresh", "Refresh failed", async () => null);
+
+  const runCleanRepo = () =>
+    run("clean", "Clean Repo failed", async () => {
+      const resolved = resolveProjectSettings(settings, project.id, project).settings;
+      const modelSelection =
+        resolved.defaultModelSelection ??
+        resolveProjectDefaultProviderModelSelection(providers, settings, project.id);
+      if (modelSelection === null) {
+        throw new Error("No model is available on this environment. Enable a provider first.");
+      }
+      const threadId = newThreadId();
+      const title = "Clean repo";
+      const runtimeMode = resolved.defaultRuntimeMode ?? DEFAULT_RUNTIME_MODE;
+      const createdAt = new Date().toISOString();
+      const result = await startTurn({
+        environmentId,
+        input: {
+          threadId,
+          message: {
+            messageId: newMessageId(),
+            role: "user",
+            text: CLEAN_REPO_PROMPT,
+            attachments: [],
+          },
+          modelSelection,
+          runtimeMode,
+          interactionMode: "default",
+          bootstrap: {
+            // No branch or worktree path launches in the project's main checkout.
+            createThread: {
+              projectId: project.id,
+              title,
+              modelSelection,
+              runtimeMode,
+              interactionMode: "default",
+              branch: null,
+              worktreePath: null,
+              createdAt,
+            },
+          },
+          createdAt,
+        },
+      });
+      if (result._tag === "Failure") throw failureOf(result);
+      await navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(scopeThreadRef(environmentId, threadId)),
+      });
+      return null;
+    });
+
+  const removeBranch = async (ref: VcsRef, force = false): Promise<void> => {
+    setDeleting(ref.name);
+    const result = await deleteBranch({
+      environmentId,
+      input: { cwd, refName: ref.name, ...(force ? { force: true } : {}) },
+    });
+    setDeleting(null);
+    if (result._tag === "Success") {
+      toastManager.add({ type: "success", title: `Deleted ${ref.name}` });
+      await reload();
+      return;
+    }
+    const failure = failureOf(result);
+    const reason =
+      typeof failure === "object" && failure !== null && "reason" in failure
+        ? failure.reason
+        : undefined;
+    if (!force && reason === "branch_not_merged") {
+      const confirmed = await requestConfirmDialog(
+        `Force delete ${ref.name}?\n${ref.name} has commits that are not merged into its upstream or HEAD. Force deleting discards them.`,
+        { variant: "destructive" },
+      );
+      if (confirmed === true) await removeBranch(ref, true);
+      return;
+    }
+    toastManager.add({
+      type: "error",
+      title: `Could not delete ${ref.name}`,
+      description: gitCommandErrorDetail(failure),
+    });
+    await reload();
+  };
+
+  const items: GitTreeGraphItem[] = (data?.pages ?? []).flatMap((page) =>
+    page.commits.map((commit, index) => ({ commit, row: page.layout.rows[index]! })),
+  );
+  const graphWidth = Math.max(1, ...(data?.pages ?? []).map((page) => page.layout.width));
+  const currentRef = data?.refs.find((ref) => ref.current) ?? null;
+  const headHash =
+    currentRef === null
+      ? null
+      : (items.find((item) => item.commit.refs.includes(currentRef.name))?.commit.hash ?? null);
+  const scrollToBranch = (ref: VcsRef) => {
+    const index = items.findIndex((item) => item.commit.refs.includes(ref.name));
+    if (index !== -1) void listRef.current?.scrollToIndex({ index, animated: false });
+  };
+  const busy = running !== null;
+  const writeTitle = canWrite ? undefined : "Needs source control write access";
+
+  const toolbar = (
+    <div className="flex shrink-0 items-center gap-1">
+      {projectPicker}
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={!canWrite || busy || currentRef === null}
+        title={writeTitle ?? "Fast-forward the current branch from its upstream"}
+        onClick={() => void runPull()}
+      >
+        {running === "pull" ? <Spinner aria-hidden /> : <ArrowDownIcon aria-hidden />}
+        Pull
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={!canWrite || busy || currentRef === null}
+        title={writeTitle ?? "Push the current branch, setting its upstream if needed"}
+        onClick={() => void runPush()}
+      >
+        {running === "push" ? <Spinner aria-hidden /> : <ArrowUpIcon aria-hidden />}
+        Push
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={!canWrite || busy || data?.isRepo !== true}
+        title={writeTitle ?? "Fetch every remote and remove stale remote-tracking branches"}
+        onClick={() => void runFetchPrune()}
+      >
+        {running === "fetch" ? <Spinner aria-hidden /> : <RefreshCwIcon aria-hidden />}
+        Fetch & prune
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={!canOperate || busy || data?.isRepo !== true}
+        title={
+          canOperate
+            ? "Start an agent thread in the main checkout that cleans up this repository"
+            : "Needs permission to start threads"
+        }
+        onClick={() => void runCleanRepo()}
+      >
+        {running === "clean" ? <Spinner aria-hidden /> : <BrushCleaningIcon aria-hidden />}
+        Clean Repo
+      </Button>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        aria-label="Refresh Git tree"
+        disabled={busy}
+        onClick={() => void runRefresh()}
+      >
+        <RefreshIcon size="md" refreshing={running === "refresh"} />
+      </Button>
+    </div>
+  );
+
+  const body = (() => {
+    if (data === null) {
+      return error === null ? (
+        <PageMessage>
+          <Spinner aria-hidden /> Loading repository…
+        </PageMessage>
+      ) : (
+        <PageMessage>{error}</PageMessage>
+      );
+    }
+    if (!data.isRepo) {
+      return <PageMessage>{project.title} is not a Git repository.</PageMessage>;
+    }
+    return (
+      <div className="flex min-h-0 flex-1 border-t border-border/60">
+        <aside
+          aria-label="Branches"
+          className="flex w-72 shrink-0 flex-col overflow-y-auto border-r border-border/60 py-2"
+        >
+          {data.refs.map((ref) => (
+            <BranchRow
+              key={ref.name}
+              branch={ref}
+              deleting={deleting === ref.name}
+              canDelete={canWrite && deleting === null}
+              onSelect={() => scrollToBranch(ref)}
+              onDelete={() => void removeBranch(ref)}
+            />
+          ))}
+          {data.refs.length === 0 ? (
+            <p className="px-3 text-xs text-muted-foreground">No local branches yet.</p>
+          ) : null}
+        </aside>
+        <div className="flex min-w-0 flex-1 flex-col">
+          {error === null ? null : (
+            <p className="border-b border-border/60 px-3 py-1.5 text-xs text-destructive-foreground">
+              {error}
+            </p>
+          )}
+          {items.length === 0 ? (
+            <PageMessage>No commits yet.</PageMessage>
+          ) : (
+            <GitTreeGraph
+              items={items}
+              width={graphWidth}
+              headHash={headHash}
+              listRef={listRef}
+              footer={
+                data.nextCursor === null ? null : (
+                  <div className="flex justify-center py-3">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={loadingMore}
+                      onClick={() => void loadMore()}
+                    >
+                      {loadingMore ? <Spinner aria-hidden /> : null}
+                      Load more
+                    </Button>
+                  </div>
+                )
+              }
+            />
+          )}
+        </div>
+      </div>
+    );
+  })();
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <GitTreeHeader>{toolbar}</GitTreeHeader>
+      {body}
+    </div>
+  );
+}
+
+function BranchRow({
+  branch,
+  deleting,
+  canDelete,
+  onSelect,
+  onDelete,
+}: {
+  branch: VcsRef;
+  deleting: boolean;
+  canDelete: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  // The main checkout's own branch is `current`; any other path is a thread's worktree.
+  const inWorktree = branch.worktreePath !== null && !branch.current;
+  const upstream = branch.upstreamRef?.replace(/^refs\/(?:remotes|heads)\//, "");
+  const deleteTitle = branch.current
+    ? "The current branch cannot be deleted"
+    : inWorktree
+      ? `Checked out in ${branch.worktreePath}`
+      : `Delete ${branch.name}`;
+  return (
+    <div className="group flex items-center gap-1 px-2">
+      <button
+        type="button"
+        className="flex min-w-0 flex-1 flex-col items-start rounded-md px-2 py-1 text-left hover:bg-accent"
+        onClick={onSelect}
+      >
+        <span className="flex w-full min-w-0 items-center gap-1.5 text-sm">
+          <GitBranchIcon
+            aria-hidden
+            className={cn(
+              "size-3.5 shrink-0",
+              branch.current ? "text-primary" : "text-muted-foreground",
+            )}
+          />
+          <span className={cn("truncate", branch.current && "font-medium")}>{branch.name}</span>
+          {branch.current ? <Badge variant="info">current</Badge> : null}
+          {inWorktree ? (
+            <FolderTreeIcon
+              aria-label={`Checked out in ${branch.worktreePath}`}
+              className="size-3.5 shrink-0 text-muted-foreground"
+            />
+          ) : null}
+        </span>
+        {upstream === undefined ? null : (
+          <span className="flex w-full min-w-0 items-center gap-1.5 pl-5 text-xs text-muted-foreground">
+            <span className="truncate">{upstream}</span>
+            {branch.upstreamGone ? (
+              <Badge variant="warning">gone</Badge>
+            ) : (
+              <>
+                {branch.ahead ? (
+                  <span aria-label={`${branch.ahead} to push`}>↑{branch.ahead}</span>
+                ) : null}
+                {branch.behind ? (
+                  <span aria-label={`${branch.behind} to pull`}>↓{branch.behind}</span>
+                ) : null}
+              </>
+            )}
+          </span>
+        )}
+      </button>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        aria-label={`Delete ${branch.name}`}
+        title={deleteTitle}
+        disabled={!canDelete || branch.current || inWorktree}
+        onClick={onDelete}
+      >
+        {deleting ? <Spinner aria-hidden /> : <Trash2Icon aria-hidden />}
+      </Button>
+    </div>
+  );
+}

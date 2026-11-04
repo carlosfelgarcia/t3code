@@ -140,6 +140,12 @@ import {
   VcsPullInput,
   GitPullRequestRefInput,
   VcsPullResult,
+  VcsPushInput,
+  VcsPushResult,
+  VcsFetchPruneInput,
+  VcsDeleteBranchInput,
+  VcsCommitGraphInput,
+  VcsCommitGraphResult,
   VcsRemoveWorktreeInput,
   GitResolvePullRequestResult,
   GitRunStackedActionInput,
@@ -458,6 +464,10 @@ export const WS_METHODS = {
   providerInstallRemove: "provider.install.remove",
 
   vcsPull: "vcs.pull",
+  vcsPush: "vcs.push",
+  vcsFetchPrune: "vcs.fetchPrune",
+  vcsDeleteBranch: "vcs.deleteBranch",
+  vcsCommitGraph: "vcs.commitGraph",
   vcsRefreshStatus: "vcs.refreshStatus",
   vcsListRefs: "vcs.listRefs",
   vcsCreateWorktree: "vcs.createWorktree",
@@ -1502,6 +1512,28 @@ const WsVcsPullRpc = Rpc.make(WS_METHODS.vcsPull, {
   error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
 });
 
+const WsVcsPushRpc = Rpc.make(WS_METHODS.vcsPush, {
+  payload: VcsPushInput,
+  success: VcsPushResult,
+  error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsFetchPruneRpc = Rpc.make(WS_METHODS.vcsFetchPrune, {
+  payload: VcsFetchPruneInput,
+  error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsDeleteBranchRpc = Rpc.make(WS_METHODS.vcsDeleteBranch, {
+  payload: VcsDeleteBranchInput,
+  error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
+const WsVcsCommitGraphRpc = Rpc.make(WS_METHODS.vcsCommitGraph, {
+  payload: VcsCommitGraphInput,
+  success: VcsCommitGraphResult,
+  error: Schema.Union([GitCommandError, EnvironmentAuthorizationError]),
+});
+
 const WsVcsRefreshStatusRpc = Rpc.make(WS_METHODS.vcsRefreshStatus, {
   payload: Schema.Struct({
     ...VcsStatusInput.fields,
@@ -2183,6 +2215,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribeWorktreeSetupRpc,
   WsWorktreeSetupCancelRpc,
   WsVcsPullRpc,
+  WsVcsPushRpc,
+  WsVcsFetchPruneRpc,
+  WsVcsDeleteBranchRpc,
+  WsVcsCommitGraphRpc,
   WsVcsRefreshStatusRpc,
   WsGitRunStackedActionRpc,
   WsGitResolvePullRequestRpc,

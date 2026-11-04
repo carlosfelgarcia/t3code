@@ -63,6 +63,7 @@ import {
   FolderGit2Icon,
   FolderIcon,
   FolderPlusIcon,
+  GitGraphIcon,
   MessageSquareDashedIcon,
   LinkIcon,
   MessageSquareIcon,
@@ -1571,6 +1572,17 @@ function OpenCommandPaletteDialog(props: {
       },
     });
   }
+
+  actionItems.push({
+    kind: "action",
+    value: "action:git-tree",
+    searchTerms: ["git", "tree", "graph", "branches", "commits", "history", "clean", "prune"],
+    title: "Open Git Tree",
+    icon: <GitGraphIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/git-tree" });
+    },
+  });
 
   actionItems.push({
     kind: "action",

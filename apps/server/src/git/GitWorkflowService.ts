@@ -14,6 +14,9 @@ import {
   type VcsCreateWorktreeResult,
   type VcsListRefsInput,
   type VcsListRefsResult,
+  type VcsCommitGraphInput,
+  type VcsCommitGraphResult,
+  type VcsPushResult,
   type GitManagerServiceError,
   type GitPreparePullRequestThreadInput,
   type GitPreparePullRequestThreadResult,
@@ -61,6 +64,12 @@ export class GitWorkflowService extends Context.Service<
     readonly invalidateRemoteStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly invalidateStatus: (cwd: string) => Effect.Effect<void, never>;
     readonly pullCurrentBranch: (cwd: string) => Effect.Effect<VcsPullResult, GitCommandError>;
+    /** Never forces; sets the upstream when the branch has none. */
+    readonly pushCurrentBranch: (cwd: string) => Effect.Effect<VcsPushResult, GitCommandError>;
+    readonly fetchPrune: (input: { readonly cwd: string }) => Effect.Effect<void, GitCommandError>;
+    readonly readCommitGraph: (
+      input: VcsCommitGraphInput,
+    ) => Effect.Effect<VcsCommitGraphResult, GitCommandError>;
     readonly runStackedAction: (
       input: GitRunStackedActionInput,
       options?: GitManager.GitRunStackedActionOptions,
@@ -373,6 +382,31 @@ export const make = Effect.gen(function* () {
     pullCurrentBranch: Effect.fn("GitWorkflowService.pullCurrentBranch")(function (cwd) {
       return ensureGitCommand("GitWorkflowService.pullCurrentBranch", cwd).pipe(
         Effect.andThen(git.pullCurrentBranch(cwd)),
+      );
+    }),
+    pushCurrentBranch: Effect.fn("GitWorkflowService.pushCurrentBranch")(function (cwd) {
+      return ensureGitCommand("GitWorkflowService.pushCurrentBranch", cwd).pipe(
+        Effect.andThen(git.pushCurrentBranch(cwd, null)),
+        Effect.map((result) => ({
+          status: result.status,
+          refName: result.branch,
+          upstreamRef: result.upstreamBranch ?? null,
+          setUpstream: result.setUpstream === true,
+        })),
+      );
+    }),
+    fetchPrune: Effect.fn("GitWorkflowService.fetchPrune")(function (input) {
+      return ensureGitCommand("GitWorkflowService.fetchPrune", input.cwd).pipe(
+        Effect.andThen(git.fetchPrune(input)),
+      );
+    }),
+    readCommitGraph: Effect.fn("GitWorkflowService.readCommitGraph")(function (input) {
+      return detectGitRepositoryForCommand("GitWorkflowService.readCommitGraph", input.cwd).pipe(
+        Effect.flatMap((isGitRepository) =>
+          isGitRepository
+            ? git.readCommitGraph(input)
+            : Effect.succeed({ isRepo: false, commits: [], nextCursor: null }),
+        ),
       );
     }),
     runStackedAction: Effect.fn("GitWorkflowService.runStackedAction")(function (input, options) {

@@ -3,6 +3,7 @@ import {
   ArrowRightIcon,
   ChartNoAxesColumnIcon,
   CircleDotIcon,
+  GitGraphIcon,
   SettingsIcon,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -248,6 +249,10 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
     closeMobileSidebar();
     void navigate({ to: "/issues", search: { state: "open" } });
   };
+  const handleGitTreeClick = () => {
+    closeMobileSidebar();
+    void navigate({ to: "/git-tree" });
+  };
   const handleSettingsClick = () => {
     closeMobileSidebar();
     void navigate({ to: "/settings" });
@@ -295,6 +300,11 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
               />
             </>
           ) : null}
+          <SidebarUtilityItem
+            icon={<GitGraphIcon />}
+            label="Git Tree"
+            onClick={handleGitTreeClick}
+          />
           <SidebarUtilityItem
             icon={<ChartNoAxesColumnIcon />}
             label="Usage"

@@ -315,6 +315,31 @@ export function createVcsEnvironmentAtoms<R, E>(
       concurrency: vcsCommandConcurrency,
       onSettled: invalidateRefs,
     }),
+    push: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:push",
+      tag: WS_METHODS.vcsPush,
+      scheduler: vcsCommandScheduler,
+      concurrency: vcsCommandConcurrency,
+      onSettled: invalidateRefs,
+    }),
+    fetchPrune: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:fetch-prune",
+      tag: WS_METHODS.vcsFetchPrune,
+      scheduler: vcsCommandScheduler,
+      concurrency: vcsCommandConcurrency,
+      onSettled: invalidateRefs,
+    }),
+    deleteBranch: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:delete-branch",
+      tag: WS_METHODS.vcsDeleteBranch,
+      scheduler: vcsCommandScheduler,
+      concurrency: vcsCommandConcurrency,
+      onSettled: invalidateRefs,
+    }),
+    readCommitGraph: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:vcs:read-commit-graph",
+      tag: WS_METHODS.vcsCommitGraph,
+    }),
     refreshStatus: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:vcs:refresh-status",
       tag: WS_METHODS.vcsRefreshStatus,

@@ -63,6 +63,17 @@ describe("RPC authorization scopes", () => {
     expect(requiredScopeForRpcMethod(WS_METHODS.issuesSetLabels)).toBe(AuthSourceControlWriteScope);
   });
 
+  it("lets thread readers see the commit graph but needs source control write to change refs", () => {
+    expect(requiredScopeForRpcMethod(WS_METHODS.vcsCommitGraph)).toBe(AuthOrchestrationReadScope);
+    for (const method of [
+      WS_METHODS.vcsPush,
+      WS_METHODS.vcsFetchPrune,
+      WS_METHODS.vcsDeleteBranch,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthSourceControlWriteScope);
+    }
+  });
+
   it("separates passive terminal observation from operations that can change a shell", () => {
     for (const method of [WS_METHODS.terminalObserve, WS_METHODS.subscribeTerminalMetadata]) {
       expect(requiredScopeForRpcMethod(method)).toBe(AuthTerminalReadScope);
