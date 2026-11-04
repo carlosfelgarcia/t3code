@@ -3,16 +3,21 @@ import {
   IssueOperationError,
   type IssueRef,
   type IssueSummary,
+  type LinkedIssue,
   type PullRequestActor,
 } from "@t3tools/contracts";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 import type { SourceControlIssues } from "@t3tools/source-control-core/server/driver";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
+import { GraphQLClient } from "effect/graphql";
 
+import * as GitHubGraphQlClient from "./gitHubGraphQlClient.ts";
 import type * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
 import * as GitHubRest from "./GitHubRest.ts";
+import { IssueDependenciesGraphQLGroup } from "./issueDependencies.graphql.ts";
 
 // GitHub's search API never pages past its first thousand results.
 const SEARCH_RESULT_CAP = 1000;
@@ -31,6 +36,7 @@ const RawLabel = Schema.Struct({
 });
 
 const RawIssue = Schema.Struct({
+  node_id: Schema.optional(Schema.String),
   number: Schema.Number,
   title: Schema.String,
   state: Schema.String,
@@ -43,6 +49,8 @@ const RawIssue = Schema.Struct({
   updated_at: Schema.String,
   /** Present only on pull requests, which GitHub serves through its issue endpoints too. */
   pull_request: Schema.optional(Schema.Unknown),
+  /** Missing on GitHub Enterprise Server versions without issue dependencies. */
+  issue_dependencies_summary: Schema.optional(Schema.Struct({ blocked_by: Schema.Number })),
 });
 type RawIssue = typeof RawIssue.Type;
 
@@ -67,6 +75,7 @@ const decodeIssue = decodeJsonResult(
   }),
 );
 const decodeComments = decodeJsonResult(Schema.Array(RawComment));
+const decodeLinkedIssues = decodeJsonResult(Schema.Array(RawIssue));
 const decodeLabels = decodeJsonResult(Schema.Array(RawRepositoryLabel));
 
 const decodeSearch = decodeJsonResult(
@@ -99,7 +108,22 @@ const toSummary = (host: string, raw: RawIssue): IssueSummary => ({
   commentCount: raw.comments,
   createdAt: raw.created_at,
   updatedAt: raw.updated_at,
+  ...(raw.issue_dependencies_summary === undefined
+    ? {}
+    : { openBlockerCount: raw.issue_dependencies_summary.blocked_by }),
 });
+
+const toLinkedIssue = (host: string, raw: RawIssue): LinkedIssue => ({
+  host,
+  repository: repositoryOf(raw),
+  number: raw.number,
+  title: raw.title,
+  state: raw.state === "closed" ? "closed" : "open",
+});
+
+const IssueGraphQLGroup = IssueDependenciesGraphQLGroup.middleware(
+  GitHubGraphQlClient.GitHubGraphQlAuth,
+);
 
 const quoted = (value: string) => `"${value.replaceAll('"', "")}"`;
 
@@ -194,6 +218,44 @@ const decodeOrFail = <A, E>(
 
 export const make = Effect.gen(function* () {
   const api = yield* GitHubRest.GitHubRest;
+  const client = yield* GraphQLClient.make(IssueGraphQLGroup).pipe(
+    Effect.provide(GitHubGraphQlClient.layer),
+  );
+
+  // Rows without them still show their count, so a failed read never fails the list.
+  const openBlockers = Effect.fn("GitHubIssues.openBlockers")(
+    function* (host: string, ids: ReadonlyArray<string>) {
+      if (ids.length === 0) return new Map<string, ReadonlyArray<LinkedIssue>>();
+      const answer = yield* client
+        .IssueBlockers({ ids })
+        .pipe(GitHubGraphQlClient.call({ host, operation: "listIssueBlockers" }));
+      return new Map(
+        answer.nodes.flatMap((node) =>
+          node?.__typename !== "Issue"
+            ? []
+            : [
+                [
+                  node.id,
+                  (node.blockedBy.nodes ?? []).flatMap((blocker) =>
+                    blocker === null || blocker.state !== "OPEN"
+                      ? []
+                      : [
+                          {
+                            host,
+                            repository: blocker.repository.nameWithOwner,
+                            number: blocker.number,
+                            title: blocker.title,
+                            state: "open" as const,
+                          },
+                        ],
+                  ),
+                ] as const,
+              ],
+        ),
+      );
+    },
+    Effect.orElseSucceed(() => new Map<string, ReadonlyArray<LinkedIssue>>()),
+  );
 
   const list: SourceControlIssues["list"] = Effect.fn("GitHubIssues.list")(function* (input) {
     const params = new URLSearchParams({
@@ -207,10 +269,21 @@ export const make = Effect.gen(function* () {
       .rest({ host: input.host, operation: "listIssues", path: `search/issues?${params}` })
       .pipe(Effect.mapError(toIssueError("listIssues", input.host)));
     const answer = yield* decodeOrFail(decodeSearch(response.body), "listIssues", input.host);
+    const items = answer.items.filter((raw) => raw.pull_request === undefined);
+    const blockers = yield* openBlockers(
+      input.host,
+      items.flatMap((raw) =>
+        raw.node_id !== undefined && (raw.issue_dependencies_summary?.blocked_by ?? 0) > 0
+          ? [raw.node_id]
+          : [],
+      ),
+    );
     return {
-      issues: answer.items
-        .filter((raw) => raw.pull_request === undefined)
-        .map((raw) => toSummary(input.host, raw)),
+      issues: items.map((raw) => {
+        const summary = toSummary(input.host, raw);
+        const named = raw.node_id === undefined ? undefined : blockers.get(raw.node_id);
+        return named === undefined ? summary : { ...summary, openBlockers: named };
+      }),
       hasMore: input.page * input.perPage < Math.min(answer.total_count, SEARCH_RESULT_CAP),
     };
   });
@@ -281,8 +354,33 @@ export const make = Effect.gen(function* () {
     return all;
   });
 
+  // Hosts without issue dependencies still show the issue, just without these lists.
+  const dependencies = (ref: IssueRef, direction: "blocked_by" | "blocking") =>
+    read(
+      ref,
+      "listIssueDependencies",
+      `${issuePath(ref)}/dependencies/${direction}?per_page=100`,
+      decodeLinkedIssues,
+    ).pipe(
+      Effect.map(({ value }) =>
+        value
+          .map((raw) => toLinkedIssue(ref.host, raw))
+          .toSorted(
+            (left, right) => Number(left.state === "closed") - Number(right.state === "closed"),
+          ),
+      ),
+      Effect.option,
+    );
+
   const detail: SourceControlIssues["detail"] = Effect.fn("GitHubIssues.detail")(function* (ref) {
-    const { value: raw } = yield* read(ref, "readIssue", issuePath(ref), decodeIssue);
+    const [{ value: raw }, blockedBy, blocking] = yield* Effect.all(
+      [
+        read(ref, "readIssue", issuePath(ref), decodeIssue),
+        dependencies(ref, "blocked_by"),
+        dependencies(ref, "blocking"),
+      ],
+      { concurrency: "unbounded" },
+    );
     if (raw.pull_request !== undefined) {
       return yield* new IssueOperationError({
         operation: "readIssue",
@@ -303,6 +401,8 @@ export const make = Effect.gen(function* () {
         createdAt: comment.created_at,
         url: comment.html_url,
       })),
+      ...(Option.isSome(blockedBy) ? { blockedBy: blockedBy.value } : {}),
+      ...(Option.isSome(blocking) ? { blocking: blocking.value } : {}),
     };
   });
 

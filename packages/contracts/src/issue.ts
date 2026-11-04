@@ -40,6 +40,14 @@ export const IssueListInput = Schema.Struct({
 });
 export type IssueListInput = typeof IssueListInput.Type;
 
+/** Another issue an issue depends on, or that depends on it. */
+export const LinkedIssue = Schema.Struct({
+  ...IssueRef.fields,
+  title: Schema.String,
+  state: IssueState,
+});
+export type LinkedIssue = typeof LinkedIssue.Type;
+
 export const IssueSummary = Schema.Struct({
   ...IssueRef.fields,
   title: Schema.String,
@@ -50,6 +58,10 @@ export const IssueSummary = Schema.Struct({
   commentCount: NonNegativeInt,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+  /** Missing where the host does not report issue dependencies. */
+  openBlockerCount: Schema.optional(NonNegativeInt),
+  /** Missing when the blockers could not be read; the count still marks the issue blocked. */
+  openBlockers: Schema.optional(Schema.Array(LinkedIssue)),
 });
 export type IssueSummary = typeof IssueSummary.Type;
 
@@ -83,6 +95,9 @@ export const IssueDetail = Schema.Struct({
   body: Schema.String,
   assignees: Schema.Array(PullRequestActor),
   comments: Schema.Array(IssueComment),
+  /** Missing when the host does not offer issue dependencies or they could not be read. */
+  blockedBy: Schema.optional(Schema.Array(LinkedIssue)),
+  blocking: Schema.optional(Schema.Array(LinkedIssue)),
 });
 export type IssueDetail = typeof IssueDetail.Type;
 

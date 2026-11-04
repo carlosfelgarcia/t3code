@@ -8,6 +8,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   effectiveIssueAuthor,
   issueActiveAccountMissing,
+  issueBlockedMarker,
   ISSUE_AUTHOR_ALL,
   issueAuthorIgnored,
   issueAuthorOptions,
@@ -88,6 +89,48 @@ describe("issueRowLabels", () => {
     expect(issueRowLabels({ ...issue, updatedAt: "2026-10-03T10:00:05Z" }, edit)).toEqual(
       issue.labels,
     );
+  });
+});
+
+describe("issueBlockedMarker", () => {
+  const issue = { host: "github.com", repository: "acme/web" } as IssueSummary;
+  const blocker = (number: number, repository = "acme/web") => ({
+    host: "github.com",
+    repository,
+    number,
+    title: `Blocker ${number}`,
+    state: "open" as const,
+  });
+
+  it("names up to three open blockers, other repositories in full, and counts the rest", () => {
+    expect(
+      issueBlockedMarker({
+        ...issue,
+        openBlockerCount: 5,
+        openBlockers: [blocker(12), blocker(9, "acme/api"), blocker(34), blocker(40)],
+      }),
+    ).toEqual({
+      text: "Blocked by #12, acme/api#9, #34 +2",
+      tooltip: [
+        "#12 Blocker 12",
+        "acme/api#9 Blocker 9",
+        "#34 Blocker 34",
+        "#40 Blocker 40",
+        "and 1 more",
+      ],
+    });
+  });
+
+  it("falls back to the count when the blockers could not be read", () => {
+    expect(issueBlockedMarker({ ...issue, openBlockerCount: 2 })).toEqual({
+      text: "Blocked by 2 issues",
+      tooltip: ["Blocked by 2 open issues"],
+    });
+  });
+
+  it("marks nothing when no blocker is open or the host reports none", () => {
+    expect(issueBlockedMarker({ ...issue, openBlockerCount: 0 })).toBeNull();
+    expect(issueBlockedMarker(issue)).toBeNull();
   });
 });
 

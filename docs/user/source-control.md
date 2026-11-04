@@ -287,6 +287,11 @@ refuses the change, the label goes back and T3 Code says why. **Start thread** o
 issue's project with the issue's number, title, and link in the composer. Nothing is sent until
 you send it, and the agent reads the rest of the issue itself. Issues are web and desktop only.
 
+An issue with open blockers is marked in the list with the blocking issues' numbers; hover the
+mark for their titles. An open issue lists what it is blocked by and what it is blocking, including
+closed ones, and selecting one opens it. Blockers are set on GitHub. GitHub Enterprise Server
+versions without issue dependencies show neither.
+
 ## Git Tree
 
 **Git Tree**, at the bottom of the sidebar, in the command palette, or as **Open Git Tree** when you

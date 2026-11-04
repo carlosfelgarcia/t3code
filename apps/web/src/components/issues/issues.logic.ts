@@ -83,6 +83,39 @@ export function issueThreadPrompt(
 
 export const issueKey = (issue: IssueRef) => `${issueRepositoryKey(issue)}#${issue.number}`;
 
+const ROW_BLOCKERS_SHOWN = 3;
+
+/** `#12` within the same repository, `owner/repo#12` across repositories. */
+export const issueReference = (from: IssueRef, to: IssueRef) =>
+  issueRepositoryKey(from) === issueRepositoryKey(to)
+    ? `#${to.number}`
+    : `${to.repository}#${to.number}`;
+
+/** Null when the issue has no open blocker, so the row stays unmarked. */
+export function issueBlockedMarker(
+  issue: IssueSummary,
+): { readonly text: string; readonly tooltip: ReadonlyArray<string> } | null {
+  const named = issue.openBlockers ?? [];
+  const count = Math.max(issue.openBlockerCount ?? 0, named.length);
+  if (count === 0) return null;
+  if (named.length === 0) {
+    const issues = count === 1 ? "issue" : "issues";
+    return {
+      text: `Blocked by ${count} ${issues}`,
+      tooltip: [`Blocked by ${count} open ${issues}`],
+    };
+  }
+  const shown = named.slice(0, ROW_BLOCKERS_SHOWN).map((blocker) => issueReference(issue, blocker));
+  const hidden = count - shown.length;
+  return {
+    text: `Blocked by ${shown.join(", ")}${hidden > 0 ? ` +${hidden}` : ""}`,
+    tooltip: [
+      ...named.map((blocker) => `${issueReference(issue, blocker)} ${blocker.title}`),
+      ...(count > named.length ? [`and ${count - named.length} more`] : []),
+    ],
+  };
+}
+
 export interface IssueLabelEdit {
   /** When the edit was made against; GitHub's search index lags, so older rows are stale. */
   readonly staleUpdatedAt: string;

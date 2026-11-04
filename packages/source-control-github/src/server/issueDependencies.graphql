@@ -1,0 +1,18 @@
+# The blockers of each blocked issue on one list page, read in one request.
+query IssueBlockers($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    ... on Issue {
+      id
+      blockedBy(first: 20) {
+        nodes {
+          number
+          title
+          state
+          repository {
+            nameWithOwner
+          }
+        }
+      }
+    }
+  }
+}

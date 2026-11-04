@@ -1,16 +1,31 @@
 import { expect, it } from "@effect/vitest";
+import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import { HttpClient, HttpClientResponse } from "effect/http";
 
+import * as GitHubAppSignIn from "./GitHubAppSignIn.ts";
+import * as GitHubCredentials from "./GitHubCredentials.ts";
 import * as GitHubIssues from "./GitHubIssues.ts";
+import * as GitHubQuota from "./GitHubQuota.ts";
 import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
 import * as GitHubRest from "./GitHubRest.ts";
 
 type Answer = Effect.Effect<GitHubRest.GitHubRestResponse, GitHubRequestPolicy.GitHubApiError>;
 
-const harness = (answer: (input: GitHubRest.GitHubRestInput) => Answer) => {
+interface GraphQlCall {
+  readonly query: string;
+  readonly variables: Record<string, unknown>;
+}
+
+const harness = (
+  answer: (input: GitHubRest.GitHubRestInput) => Answer,
+  graphql: (call: GraphQlCall) => Response = () => new Response(null, { status: 500 }),
+) => {
   const calls: Array<GitHubRest.GitHubRestInput> = [];
-  const layer = Layer.succeed(
+  const graphqlCalls: Array<GraphQlCall> = [];
+  const rest = Layer.succeed(
     GitHubRest.GitHubRest,
     GitHubRest.GitHubRest.of({
       rest: (input) => {
@@ -21,8 +36,54 @@ const harness = (answer: (input: GitHubRest.GitHubRestInput) => Answer) => {
       appCredential: () => Effect.succeedNone,
     }),
   );
-  return { calls, issues: GitHubIssues.make.pipe(Effect.provide(layer)) };
+  const http = Layer.succeed(
+    HttpClient.HttpClient,
+    HttpClient.make((request) =>
+      Effect.gen(function* () {
+        const body = request.body;
+        const call = JSON.parse(
+          body._tag === "Uint8Array" ? new TextDecoder().decode(body.body) : "{}",
+        ) as GraphQlCall;
+        graphqlCalls.push(call);
+        return HttpClientResponse.fromWeb(request, graphql(call));
+      }),
+    ),
+  );
+  const policy = GitHubRequestPolicy.layer.pipe(
+    Layer.provideMerge(
+      Layer.mergeAll(
+        http,
+        Layer.succeed(GitHubCredentials.GitHubCredentials, {
+          get: (host) =>
+            Effect.succeed({
+              host,
+              token: Redacted.make("secret"),
+              source: "gh" as const,
+              fingerprint: `${host}:secret`,
+            }),
+          saved: () => Effect.succeedNone,
+          fingerprint: (host, token) => Effect.succeed(`${host}:${token}`),
+          invalidate: () => Effect.void,
+        }),
+        Layer.mock(GitHubAppSignIn.GitHubAppSignIn)({
+          enabled: false,
+          token: () => Effect.succeedNone,
+          invalidate: () => Effect.void,
+        }),
+        GitHubQuota.layer,
+        SourceControlRateLimit.layer,
+      ),
+    ),
+  );
+  return {
+    calls,
+    graphqlCalls,
+    issues: GitHubIssues.make.pipe(Effect.provide(Layer.merge(rest, policy))),
+  };
 };
+
+const graphqlAnswer = (data: unknown) =>
+  new Response(JSON.stringify({ data }), { headers: { "content-type": "application/json" } });
 
 const ok = (body: unknown, headers: Record<string, string> = {}) =>
   Effect.succeed({
@@ -113,6 +174,101 @@ it.effect("lists issues across repositories, newest update first, without pull r
   }),
 );
 
+it.effect("names the open blockers of each blocked issue on a page in one request", () =>
+  Effect.gen(function* () {
+    const blocked = {
+      ...rawIssue,
+      node_id: "I_12",
+      issue_dependencies_summary: { blocked_by: 2, total_blocked_by: 3 },
+    };
+    const clear = {
+      ...rawIssue,
+      number: 14,
+      node_id: "I_14",
+      issue_dependencies_summary: { blocked_by: 0, total_blocked_by: 1 },
+    };
+    const blocker = (number: number, state: string, repository = "acme/web") => ({
+      number,
+      title: `Blocker ${number}`,
+      state,
+      repository: { nameWithOwner: repository },
+    });
+    const { graphqlCalls, issues } = harness(
+      () => ok({ total_count: 2, items: [blocked, clear] }),
+      () =>
+        graphqlAnswer({
+          nodes: [
+            {
+              __typename: "Issue",
+              id: "I_12",
+              blockedBy: {
+                nodes: [blocker(3, "OPEN"), blocker(4, "CLOSED"), blocker(9, "OPEN", "acme/api")],
+              },
+            },
+          ],
+        }),
+    );
+    const result = yield* (yield* issues).list({
+      host: "github.com",
+      repositories: ["acme/web"],
+      state: "open",
+      labels: [],
+      query: undefined,
+      author: undefined,
+      page: 1,
+      perPage: 50,
+    });
+
+    expect(result.issues).toEqual([
+      {
+        ...summary,
+        openBlockerCount: 2,
+        openBlockers: [
+          {
+            host: "github.com",
+            repository: "acme/web",
+            number: 3,
+            title: "Blocker 3",
+            state: "open",
+          },
+          {
+            host: "github.com",
+            repository: "acme/api",
+            number: 9,
+            title: "Blocker 9",
+            state: "open",
+          },
+        ],
+      },
+      { ...summary, number: 14, openBlockerCount: 0 },
+    ]);
+    expect(graphqlCalls.map(({ variables }) => variables)).toEqual([{ ids: ["I_12"] }]);
+  }),
+);
+
+it.effect("still lists blocked issues by count when their blockers cannot be read", () =>
+  Effect.gen(function* () {
+    const { issues } = harness(() =>
+      ok({
+        total_count: 1,
+        items: [{ ...rawIssue, node_id: "I_12", issue_dependencies_summary: { blocked_by: 1 } }],
+      }),
+    );
+    const result = yield* (yield* issues).list({
+      host: "github.com",
+      repositories: ["acme/web"],
+      state: "open",
+      labels: [],
+      query: undefined,
+      author: undefined,
+      page: 1,
+      perPage: 50,
+    });
+
+    expect(result.issues).toEqual([{ ...summary, openBlockerCount: 1 }]);
+  }),
+);
+
 it.effect("adds labels in one request and removes them one at a time", () =>
   Effect.gen(function* () {
     const { calls, issues } = harness(() => ok([]));
@@ -172,15 +328,45 @@ it.effect("reads an issue with its assignees and comments in order", () =>
       created_at: at,
       html_url: `https://github.com/acme/web/issues/12#issuecomment-${id}`,
     });
+    const linked = (number: number, state: string, repository = "acme/web") => ({
+      ...rawIssue,
+      number,
+      title: `Issue ${number}`,
+      state,
+      repository_url: `https://api.github.com/repos/${repository}`,
+    });
     const { calls, issues } = harness(({ path }) =>
       path.includes("/comments")
         ? ok([comment(1, "2026-10-02T10:00:00Z"), comment(2, "2026-10-03T09:00:00Z")])
-        : ok(rawIssue),
+        : path.includes("/dependencies/blocked_by")
+          ? ok([linked(3, "closed"), linked(9, "open", "acme/api")])
+          : path.includes("/dependencies/blocking")
+            ? ok([linked(20, "open")])
+            : ok(rawIssue),
     );
     const detail = yield* (yield* issues).detail(ref);
 
     expect(detail).toEqual({
       ...summary,
+      blockedBy: [
+        { host: "github.com", repository: "acme/api", number: 9, title: "Issue 9", state: "open" },
+        {
+          host: "github.com",
+          repository: "acme/web",
+          number: 3,
+          title: "Issue 3",
+          state: "closed",
+        },
+      ],
+      blocking: [
+        {
+          host: "github.com",
+          repository: "acme/web",
+          number: 20,
+          title: "Issue 20",
+          state: "open",
+        },
+      ],
       body: "It crashes.",
       assignees: [summary.author],
       comments: [
@@ -200,10 +386,32 @@ it.effect("reads an issue with its assignees and comments in order", () =>
         },
       ],
     });
-    expect(calls.map(({ path }) => path)).toEqual([
+    expect(calls.map(({ path }) => path).toSorted()).toEqual([
       "repos/acme/web/issues/12",
       "repos/acme/web/issues/12/comments?per_page=100&page=1",
+      "repos/acme/web/issues/12/dependencies/blocked_by?per_page=100",
+      "repos/acme/web/issues/12/dependencies/blocking?per_page=100",
     ]);
+  }),
+);
+
+it.effect("reads an issue without its dependencies when GitHub cannot list them", () =>
+  Effect.gen(function* () {
+    const { issues } = harness(({ path }) =>
+      path.includes("/dependencies/")
+        ? refused(404, "Not Found")
+        : path.includes("/comments")
+          ? ok([])
+          : ok(rawIssue),
+    );
+    const detail = yield* (yield* issues).detail(ref);
+
+    expect(detail).toEqual({
+      ...summary,
+      body: "It crashes.",
+      assignees: [summary.author],
+      comments: [],
+    });
   }),
 );
 

@@ -10,6 +10,7 @@ import {
 } from "@t3tools/contracts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
+  BanIcon,
   CircleCheckIcon,
   CircleDotIcon,
   FolderGit2Icon,
@@ -34,6 +35,7 @@ import { Menu, MenuCheckboxItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { RefreshIcon } from "../ui/refresh-icon";
 import { SidebarInset } from "../ui/sidebar";
 import { Spinner } from "../ui/spinner";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
 import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { PullRequestCompactFilterMenu } from "../pullRequest/PullRequestCompactFilterMenu";
@@ -54,6 +56,7 @@ import {
   effectiveIssueAuthor,
   issueActiveAccountMissing,
   ISSUE_AUTHOR_ALL,
+  issueBlockedMarker,
   issueAuthorIgnored,
   issueAuthorOptions,
   type IssueLabelEdit,
@@ -382,6 +385,7 @@ export function IssuesPage() {
             reference={selected}
             projects={projects}
             onBack={() => select(null)}
+            onOpenIssue={select}
             onLabelsChanged={(issue, edit) => {
               setLabelEdits((current) => new Map(current).set(issueKey(issue), edit));
               refreshList();
@@ -508,6 +512,7 @@ function IssueRow({
         meta={
           <span className="@container/pr-row-meta flex min-w-0 flex-1 items-center gap-1.5">
             <PullRequestRowLabels labels={labels} />
+            <IssueBlockedMarker issue={issue} />
             <PullRequestRowAuthor actor={issue.author} />
             <span className="truncate">{issue.repository}</span>
           </span>
@@ -515,6 +520,24 @@ function IssueRow({
         updatedAt={issue.updatedAt}
       />
     </button>
+  );
+}
+
+function IssueBlockedMarker({ issue }: { issue: IssueSummary }) {
+  const marker = issueBlockedMarker(issue);
+  if (marker === null) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="inline-flex min-w-0 shrink items-center gap-1" />}>
+        <BanIcon aria-hidden className="size-3 shrink-0" />
+        <span className="truncate">{marker.text}</span>
+      </TooltipTrigger>
+      <TooltipPopup>
+        {marker.tooltip.map((line) => (
+          <div key={line}>{line}</div>
+        ))}
+      </TooltipPopup>
+    </Tooltip>
   );
 }
 
