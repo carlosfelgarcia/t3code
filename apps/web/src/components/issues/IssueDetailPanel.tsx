@@ -5,6 +5,7 @@ import type {
   EnvironmentId,
   IssueDetail,
   IssueRef,
+  LinkedIssue,
   PullRequestLabelCandidate,
 } from "@t3tools/contracts";
 import {
@@ -21,6 +22,7 @@ import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useEnvironments } from "~/state/environments";
 import { issueEnvironment } from "~/state/issues";
 import { useEnvironmentQuery } from "~/state/query";
+import { cn } from "~/lib/utils";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { RelativeTime } from "../RelativeTime";
@@ -36,7 +38,12 @@ import { PullRequestMarkdown } from "../pullRequest/PullRequestMarkdown";
 import { PullRequestRowAuthor } from "../pullRequest/PullRequestListRow";
 import { PullRequestLabelChip } from "../pullRequest/pullRequestPresentation";
 import { IssueStateGlyph } from "./IssueStateGlyph";
-import { type IssueLabelEdit, issueThreadPrompt, projectsForRepository } from "./issues.logic";
+import {
+  type IssueLabelEdit,
+  issueReference,
+  issueThreadPrompt,
+  projectsForRepository,
+} from "./issues.logic";
 
 const lastIssuePromptByDraft = new Map<DraftId, string>();
 const NO_OVERRIDES: ReadonlyMap<string, boolean> = new Map();
@@ -46,12 +53,14 @@ export function IssueDetailPanel({
   reference,
   projects,
   onBack,
+  onOpenIssue,
   onLabelsChanged,
 }: {
   environmentId: EnvironmentId;
   reference: IssueRef;
   projects: ReadonlyArray<EnvironmentProject>;
   onBack: () => void;
+  onOpenIssue: (issue: IssueRef) => void;
   onLabelsChanged: (issue: IssueRef, edit: IssueLabelEdit) => void;
 }) {
   const query = useEnvironmentQuery(issueEnvironment.detail({ environmentId, input: reference }));
@@ -133,6 +142,18 @@ export function IssueDetailPanel({
                   ))
                 )}
               </dd>
+              <LinkedIssues
+                title="Blocked by"
+                from={detail}
+                issues={detail.blockedBy}
+                onOpen={onOpenIssue}
+              />
+              <LinkedIssues
+                title="Blocking"
+                from={detail}
+                issues={detail.blocking}
+                onOpen={onOpenIssue}
+              />
             </dl>
             {detail.body.trim().length > 0 ? (
               <PullRequestMarkdown
@@ -178,6 +199,43 @@ export function IssueDetailPanel({
         )}
       </div>
     </div>
+  );
+}
+
+function LinkedIssues({
+  title,
+  from,
+  issues,
+  onOpen,
+}: {
+  title: string;
+  from: IssueRef;
+  issues: ReadonlyArray<LinkedIssue> | undefined;
+  onOpen: (issue: IssueRef) => void;
+}) {
+  if (issues === undefined || issues.length === 0) return null;
+  return (
+    <>
+      <dt className="pt-0.5 text-muted-foreground">{title}</dt>
+      <dd className="flex min-w-0 flex-col gap-1">
+        {issues.map((issue) => (
+          <button
+            key={`${issue.repository}#${issue.number}`}
+            type="button"
+            className="flex min-w-0 items-center gap-1.5 text-left hover:underline"
+            onClick={() =>
+              onOpen({ host: issue.host, repository: issue.repository, number: issue.number })
+            }
+          >
+            <IssueStateGlyph state={issue.state} className="size-3.5" />
+            <span className="shrink-0 text-muted-foreground">{issueReference(from, issue)}</span>
+            <span className={cn("truncate", issue.state === "closed" && "text-muted-foreground")}>
+              {issue.title}
+            </span>
+          </button>
+        ))}
+      </dd>
+    </>
   );
 }
 
