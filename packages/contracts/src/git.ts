@@ -164,6 +164,8 @@ export const VcsCommitGraphCommit = Schema.Struct({
   authorDate: Schema.String,
   /** Branch names pointing at this commit: local names, and remote ones as `remote/branch`. */
   refs: Schema.Array(TrimmedNonEmptyStringSchema),
+  /** Local tag names pointing at this commit. Absent when there are none or the server predates tags. */
+  tags: Schema.optional(Schema.Array(TrimmedNonEmptyStringSchema)),
 });
 export type VcsCommitGraphCommit = typeof VcsCommitGraphCommit.Type;
 
@@ -171,6 +173,8 @@ export const VcsCommitGraphResult = Schema.Struct({
   isRepo: Schema.Boolean,
   commits: Schema.Array(VcsCommitGraphCommit),
   nextCursor: NonNegativeInt.pipe(Schema.NullOr),
+  /** Commit checked out in `cwd`, attached or detached. Absent from servers that predate it. */
+  headHash: Schema.optional(TrimmedNonEmptyStringSchema.pipe(Schema.NullOr)),
 });
 export type VcsCommitGraphResult = typeof VcsCommitGraphResult.Type;
 

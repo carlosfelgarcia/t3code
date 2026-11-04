@@ -319,9 +319,11 @@ function GitTreeView({
   const graphWidth = Math.max(1, ...(data?.pages ?? []).map((page) => page.layout.width));
   const currentRef = data?.refs.find((ref) => ref.current) ?? null;
   const headHash =
-    currentRef === null
-      ? null
-      : (items.find((item) => item.commit.refs.includes(currentRef.name))?.commit.hash ?? null);
+    data?.headHash !== undefined
+      ? data.headHash
+      : currentRef === null
+        ? null
+        : (items.find((item) => item.commit.refs.includes(currentRef.name))?.commit.hash ?? null);
   const scrollToBranch = (ref: VcsRef) => {
     const index = items.findIndex((item) => item.commit.refs.includes(ref.name));
     if (index !== -1) void listRef.current?.scrollToIndex({ index, animated: false });
@@ -434,6 +436,7 @@ function GitTreeView({
               items={items}
               width={graphWidth}
               headHash={headHash}
+              headBranch={currentRef?.name ?? null}
               listRef={listRef}
               footer={
                 data.nextCursor === null ? null : (

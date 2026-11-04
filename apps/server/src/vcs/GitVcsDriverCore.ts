@@ -4890,16 +4890,17 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
   const readCommitGraph = Effect.fn("readCommitGraph")(function* (input: VcsCommitGraphInput) {
     const limit = input.limit ?? GIT_COMMIT_GRAPH_DEFAULT_LIMIT;
     const cursor = input.cursor ?? 0;
-    const [refsResult, defaultRefResult, headRefResult] = yield* Effect.all(
+    const [refsResult, defaultRefResult, headRefResult, headHashResult] = yield* Effect.all(
       [
         executeGit(
           "GitVcsDriver.readCommitGraph.refs",
           input.cwd,
           [
             "for-each-ref",
-            "--format=%(objectname)%09%(refname)%09%(symref)%09%(upstream)%09%(upstream:track,nobracket)",
+            "--format=%(objectname)%09%(refname)%09%(symref)%09%(upstream)%09%(upstream:track,nobracket)%09%(*objectname)",
             "refs/heads",
             "refs/remotes",
+            "refs/tags",
           ],
           { timeoutMs: 30_000, maxOutputBytes: 16 * 1024 * 1024 },
         ),
@@ -4915,25 +4916,37 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           ["symbolic-ref", "--quiet", "HEAD"],
           { timeoutMs: 5_000, allowNonZeroExit: true },
         ),
+        executeGit(
+          "GitVcsDriver.readCommitGraph.headHash",
+          input.cwd,
+          ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
+          { timeoutMs: 5_000, allowNonZeroExit: true },
+        ),
       ],
       { concurrency: "unbounded" },
     );
+    const headHash = headHashResult.exitCode === 0 ? headHashResult.stdout.trim() || null : null;
 
     const labelsByCommit = new Map<string, string[]>();
-    const addLabel = (commit: string, label: string) => {
-      const labels = labelsByCommit.get(commit);
-      if (labels) labels.push(label);
-      else labelsByCommit.set(commit, [label]);
+    const tagsByCommit = new Map<string, string[]>();
+    const addTo = (byCommit: Map<string, string[]>, commit: string, name: string) => {
+      const names = byCommit.get(commit);
+      if (names) names.push(name);
+      else byCommit.set(commit, [name]);
     };
     const tips = new Set<string>();
     const wantedRemoteRefs = new Set<string>();
     const remoteRefCommits = new Map<string, string>();
     for (const line of refsResult.stdout.split("\n")) {
-      const [commit, refName, symbolicTarget, upstreamRef, upstreamTrack] = line.split("\t");
+      const [commit, refName, symbolicTarget, upstreamRef, upstreamTrack, peeledCommit] =
+        line.split("\t");
       if (!commit || !refName || symbolicTarget) continue;
-      if (refName.startsWith("refs/heads/")) {
+      if (refName.startsWith("refs/tags/")) {
+        // Annotated tags peel to the commit they point to.
+        addTo(tagsByCommit, peeledCommit || commit, refName.slice("refs/tags/".length));
+      } else if (refName.startsWith("refs/heads/")) {
         tips.add(refName);
-        addLabel(commit, refName.slice("refs/heads/".length));
+        addTo(labelsByCommit, commit, refName.slice("refs/heads/".length));
         if (upstreamRef && upstreamTrack?.trim() !== "gone") wantedRemoteRefs.add(upstreamRef);
       } else if (refName.startsWith("refs/remotes/")) {
         remoteRefCommits.set(refName, commit);
@@ -4943,11 +4956,11 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
     for (const [refName, commit] of remoteRefCommits) {
       if (!wantedRemoteRefs.has(refName)) continue;
       tips.add(refName);
-      addLabel(commit, refName.slice("refs/remotes/".length));
+      addTo(labelsByCommit, commit, refName.slice("refs/remotes/".length));
     }
     // Exit 1 is a detached HEAD; anything else, such as an unborn branch, has no commit to add.
     if (headRefResult.exitCode === 1 && headRefResult.stderr.trim() === "") tips.add("HEAD");
-    if (tips.size === 0) return { isRepo: true, commits: [], nextCursor: null };
+    if (tips.size === 0) return { isRepo: true, commits: [], nextCursor: null, headHash };
 
     const result = yield* executeGit(
       "GitVcsDriver.readCommitGraph.log",
@@ -4979,6 +4992,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
       );
       index += COMMIT_GRAPH_FIELD_COUNT;
       if (!hash) continue;
+      const tags = tagsByCommit.get(hash);
       commits.push({
         hash,
         parents: parents ? parents.split(" ").filter(Boolean) : [],
@@ -4987,12 +5001,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         authorName: authorName ?? "",
         authorDate: authorDate ?? "",
         refs: labelsByCommit.get(hash) ?? [],
+        ...(tags ? { tags } : {}),
       });
     }
     return {
       isRepo: true,
       commits: commits.slice(0, limit),
       nextCursor: commits.length > limit ? cursor + limit : null,
+      headHash,
     };
   });
 
