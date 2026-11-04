@@ -18,6 +18,7 @@ import ProjectScriptsControl, {
 } from "../ProjectScriptsControl";
 import { memo, useState, type ComponentProps } from "react";
 import { ThreadDetailsCard } from "./ThreadDetailsCard";
+import { ThreadDetailsCleanRepoRow } from "./ThreadDetailsCleanRepoRow";
 import { OpenInPicker } from "./OpenInPicker";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
@@ -158,6 +159,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
             props.gitCwd !== null &&
             props.activeProjectName !== undefined &&
             (visible.gitActions || (visible.changes && props.isGitRepo)),
+          cleanRepo: density === "full" && props.isGitRepo && visible.cleanRepo,
         };
         return (
           <>
@@ -212,7 +214,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 </ThreadDetailsSection>
               ) : null}
 
-              {props.gitCwd && (show.branch || show.git) ? (
+              {props.gitCwd && (show.branch || show.git || show.cleanRepo) ? (
                 <ThreadDetailsSection
                   headingId="thread-details-version-control-heading"
                   title="Version Control"
@@ -232,6 +234,12 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                         activeThreadRef={activeThreadRef}
                         {...(props.draftId ? { draftId: props.draftId } : {})}
                         {...(props.onOpenChanges ? { onOpenChanges: props.onOpenChanges } : {})}
+                      />
+                    ) : null}
+                    {show.cleanRepo ? (
+                      <ThreadDetailsCleanRepoRow
+                        environmentId={props.environmentId}
+                        projectId={props.projectId}
                       />
                     ) : null}
                   </div>
