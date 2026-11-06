@@ -16,6 +16,7 @@ import {
   issueBulkLabels,
   issueRepositories,
   issueRowLabels,
+  issueRowState,
   projectsForRepository,
 } from "./issues.logic";
 
@@ -91,6 +92,23 @@ describe("issueRowLabels", () => {
     expect(issueRowLabels({ ...issue, updatedAt: "2026-10-03T10:00:05Z" }, edit)).toEqual(
       issue.labels,
     );
+  });
+});
+
+describe("issueRowState", () => {
+  const issue = { updatedAt: "2026-10-03T10:00:00Z", state: "open" } as const;
+  const edit = { staleUpdatedAt: "2026-10-03T10:00:00Z", state: "closed" } as const;
+
+  it("shows a just-made state change while the list still holds the read from before it", () => {
+    expect(issueRowState(issue, edit)).toBe("closed");
+  });
+
+  it("trusts the list again once it carries a newer read of the issue", () => {
+    expect(issueRowState({ ...issue, updatedAt: "2026-10-03T10:00:05Z" }, edit)).toBe("open");
+  });
+
+  it("keeps the listed state when the issue has not been changed here", () => {
+    expect(issueRowState(issue, undefined)).toBe("open");
   });
 });
 

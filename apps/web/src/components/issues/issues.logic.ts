@@ -5,6 +5,7 @@ import type {
   IssueListResult,
   IssueRef,
   IssueRepository,
+  IssueState,
   IssueSummary,
   PullRequestLabel,
   PullRequestLabelCandidate,
@@ -128,6 +129,20 @@ export function issueRowLabels(
   edit: IssueLabelEdit | undefined,
 ): ReadonlyArray<PullRequestLabel> {
   return edit !== undefined && issue.updatedAt <= edit.staleUpdatedAt ? edit.labels : issue.labels;
+}
+
+export interface IssueStateEdit {
+  /** As on `IssueLabelEdit`: a closed issue can list as open until GitHub's search catches up. */
+  readonly staleUpdatedAt: string;
+  readonly state: IssueState;
+}
+
+/** An issue's state, preferring a just-made change until the read catches up with it. */
+export function issueRowState(
+  issue: Pick<IssueSummary, "state" | "updatedAt">,
+  edit: IssueStateEdit | undefined,
+): IssueState {
+  return edit !== undefined && issue.updatedAt <= edit.staleUpdatedAt ? edit.state : issue.state;
 }
 
 type IssueWithLabels = IssueRef & { readonly labels: ReadonlyArray<PullRequestLabel> };

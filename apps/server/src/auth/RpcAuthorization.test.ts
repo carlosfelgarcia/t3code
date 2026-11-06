@@ -51,7 +51,7 @@ describe("RPC authorization scopes", () => {
     );
   });
 
-  it("lets thread readers browse issues but needs source control write to change their labels", () => {
+  it("lets thread readers browse issues but needs source control write to change them", () => {
     for (const method of [
       WS_METHODS.issuesList,
       WS_METHODS.issuesDetail,
@@ -61,6 +61,7 @@ describe("RPC authorization scopes", () => {
       expect(requiredScopeForRpcMethod(method)).toBe(AuthOrchestrationReadScope);
     }
     expect(requiredScopeForRpcMethod(WS_METHODS.issuesSetLabels)).toBe(AuthSourceControlWriteScope);
+    expect(requiredScopeForRpcMethod(WS_METHODS.issuesSetState)).toBe(AuthSourceControlWriteScope);
   });
 
   it("lets thread readers see the commit graph but needs source control write to change refs", () => {

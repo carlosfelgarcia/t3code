@@ -271,15 +271,17 @@ describe("command permissions", () => {
 });
 
 it.effect(
-  "requires source control alone for git and issue labels, and both grants when attaching a worktree to a thread",
+  "requires source control alone for git and issue changes, and both grants when attaching a worktree to a thread",
   () =>
     Effect.scoped(
       Effect.gen(function* () {
         const registry = yield* setup;
         registry.set(sessions(env), AsyncResult.success(grant(true)));
-        const writes = [WS_METHODS.vcsInit, WS_METHODS.issuesSetLabels].map((method) =>
-          createCommandPermissions(runtime, method),
-        );
+        const writes = [
+          WS_METHODS.vcsInit,
+          WS_METHODS.issuesSetLabels,
+          WS_METHODS.issuesSetState,
+        ].map((method) => createCommandPermissions(runtime, method));
         for (const write of writes) {
           expect(registry.get(write.permissionAtom(env))).toBe(false);
           expect((yield* write.authorize(registry, env).pipe(Effect.flip)).requiredPermission).toBe(

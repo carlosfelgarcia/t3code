@@ -290,8 +290,10 @@ you leave Issues. An environment running an older T3 Code cannot filter by autho
 instead of listing everyone.
 
 Open an issue to read its description and comments. You can add and remove labels; if GitHub
-refuses the change, the label goes back and T3 Code says why. **Start thread** opens a draft in the
-issue's project with the issue's number, title, and link in the composer. Nothing is sent until
+refuses the change, the label goes back and T3 Code says why. **Close issue** and **Reopen issue**
+sit beside its state, and in the menu when you right-click it in the list. A closed issue can stay
+in the Open list for a moment, marked closed, until GitHub's search catches up. **Start thread**
+opens a draft in the issue's project with the issue's number, title, and link in the composer. Nothing is sent until
 you send it, and the agent reads the rest of the issue itself. Issues are web and desktop only.
 
 The list shows the newest issues first, in issue-number order within a repository. To label

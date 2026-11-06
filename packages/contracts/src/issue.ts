@@ -108,6 +108,12 @@ export const IssueLabelChangeInput = Schema.Struct({
 });
 export type IssueLabelChangeInput = typeof IssueLabelChangeInput.Type;
 
+export const IssueStateChangeInput = Schema.Struct({
+  ...IssueRef.fields,
+  state: IssueState,
+});
+export type IssueStateChangeInput = typeof IssueStateChangeInput.Type;
+
 export const IssueErrorReason = Schema.Literals([
   "unsupported",
   "unauthenticated",

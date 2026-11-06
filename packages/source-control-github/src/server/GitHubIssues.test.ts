@@ -313,6 +313,34 @@ it.effect("treats removing a label the issue no longer has as done", () =>
   }),
 );
 
+it.effect("closes and reopens an issue by patching its state", () =>
+  Effect.gen(function* () {
+    const { calls, issues } = harness(() => ok(rawIssue));
+    const service = yield* issues;
+    yield* service.setState({ ...ref, state: "closed" });
+    yield* service.setState({ ...ref, state: "open" });
+
+    expect(calls.map(({ method, path, body }) => ({ method, path, body }))).toEqual([
+      { method: "PATCH", path: "repos/acme/web/issues/12", body: { state: "closed" } },
+      { method: "PATCH", path: "repos/acme/web/issues/12", body: { state: "open" } },
+    ]);
+  }),
+);
+
+it.effect("names the repository when GitHub refuses a state change", () =>
+  Effect.gen(function* () {
+    const { issues } = harness(() => refused(403, "Must have triage rights to Repository."));
+    const error = yield* (yield* issues).setState({ ...ref, state: "closed" }).pipe(Effect.flip);
+
+    expect(error).toMatchObject({
+      _tag: "IssueOperationError",
+      reason: "forbidden",
+      repository: "acme/web",
+      message: "You don't have permission to close or reopen issues in acme/web.",
+    });
+  }),
+);
+
 it.effect("reads an issue with its assignees and comments in order", () =>
   Effect.gen(function* () {
     const comment = (id: number, at: string) => ({

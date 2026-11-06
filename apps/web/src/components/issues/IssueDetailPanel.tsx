@@ -5,13 +5,17 @@ import type {
   EnvironmentId,
   IssueDetail,
   IssueRef,
+  IssueState,
   IssueSummary,
   LinkedIssue,
   PullRequestLabelCandidate,
 } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
 import {
   ArrowLeftIcon,
   ChevronDownIcon,
+  CircleCheckIcon,
+  CircleDotIcon,
   ExternalLinkIcon,
   MessageSquarePlusIcon,
   TagIcon,
@@ -42,6 +46,8 @@ import { IssueStateGlyph } from "./IssueStateGlyph";
 import {
   type IssueLabelEdit,
   issueReference,
+  issueRowState,
+  type IssueStateEdit,
   issueThreadPrompt,
   projectsForRepository,
 } from "./issues.logic";
@@ -55,6 +61,9 @@ export function IssueDetailPanel({
   onBack,
   onOpenIssue,
   onLabelsChanged,
+  stateEdit,
+  changingState,
+  onChangeState,
 }: {
   environmentId: EnvironmentId;
   reference: IssueRef;
@@ -62,6 +71,9 @@ export function IssueDetailPanel({
   onBack: () => void;
   onOpenIssue: (issue: IssueRef) => void;
   onLabelsChanged: (issue: IssueRef, edit: IssueLabelEdit) => void;
+  stateEdit: IssueStateEdit | undefined;
+  changingState: boolean;
+  onChangeState: (issue: IssueSummary, state: IssueState) => void;
 }) {
   const query = useEnvironmentQuery(issueEnvironment.detail({ environmentId, input: reference }));
   const detail = query.data;
@@ -110,10 +122,12 @@ export function IssueDetailPanel({
                 <span className="font-normal text-muted-foreground">#{detail.number}</span>
               </h2>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                <span className="inline-flex items-center gap-1.5">
-                  <IssueStateGlyph state={detail.state} />
-                  {detail.state === "open" ? "Open" : "Closed"}
-                </span>
+                <IssueStateControl
+                  environmentId={environmentId}
+                  state={issueRowState(detail, stateEdit)}
+                  changing={changingState}
+                  onChange={(state) => onChangeState(detail, state)}
+                />
                 <PullRequestRowAuthor actor={detail.author} />
                 <span>
                   opened <RelativeTime timestamp={detail.createdAt} />
@@ -199,6 +213,40 @@ export function IssueDetailPanel({
         )}
       </div>
     </div>
+  );
+}
+
+function IssueStateControl({
+  environmentId,
+  state,
+  changing,
+  onChange,
+}: {
+  environmentId: EnvironmentId;
+  state: IssueState;
+  changing: boolean;
+  onChange: (state: IssueState) => void;
+}) {
+  const canChange = useAtomValue(issueEnvironment.setState.permissionAtom(environmentId));
+  const open = state === "open";
+  return (
+    <>
+      <span className="inline-flex items-center gap-1.5">
+        <IssueStateGlyph state={state} />
+        {open ? "Open" : "Closed"}
+      </span>
+      {canChange ? (
+        <Button
+          variant="outline"
+          size="xs"
+          disabled={changing}
+          onClick={() => onChange(open ? "closed" : "open")}
+        >
+          {open ? <CircleCheckIcon /> : <CircleDotIcon />}
+          {open ? "Close issue" : "Reopen issue"}
+        </Button>
+      ) : null}
+    </>
   );
 }
 

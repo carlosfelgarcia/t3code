@@ -4,6 +4,7 @@ import type {
   IssueListState,
   IssueOperationError,
   IssueRef,
+  IssueStateChangeInput,
   IssueSummary,
   PullRequestLabelCandidateList,
   SourceControlAppAccess,
@@ -67,7 +68,7 @@ export interface SourceControlIssueListInput {
   readonly perPage: number;
 }
 
-/** Issue reads and label edits. Only GitHub has them; there is no shared issue abstraction. */
+/** Issue reads and edits. Only GitHub has them; there is no shared issue abstraction. */
 export interface SourceControlIssues {
   /** Most recently updated first. Never includes pull requests. */
   readonly list: (
@@ -81,6 +82,7 @@ export interface SourceControlIssues {
     ref: IssueRef,
   ) => Effect.Effect<PullRequestLabelCandidateList, IssueOperationError>;
   readonly setLabels: (input: IssueLabelChangeInput) => Effect.Effect<void, IssueOperationError>;
+  readonly setState: (input: IssueStateChangeInput) => Effect.Effect<void, IssueOperationError>;
 }
 
 export interface SourceControlDriverInstance {

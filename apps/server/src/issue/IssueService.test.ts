@@ -43,6 +43,7 @@ const makeService = (issues: Partial<SourceControlIssues>) => {
           detail: () => Effect.die("unused"),
           labelCandidates: () => Effect.die("unused"),
           setLabels: () => Effect.void,
+          setState: () => Effect.void,
           ...issues,
         },
       },
@@ -171,6 +172,29 @@ it.effect("reads GitHub again after a label change instead of serving the cached
       number: 1,
       labels: ["bug"],
       applied: true,
+    });
+    yield* service.list(input);
+    expect(reads).toBe(2);
+  }),
+);
+
+it.effect("reads GitHub again after a state change instead of serving the cached list", () =>
+  Effect.gen(function* () {
+    let reads = 0;
+    const service = yield* makeService({
+      list: () => Effect.sync(() => (reads++, { issues: [], hasMore: false })),
+    });
+    const input = {
+      repositories: [{ host: "github.com", repository: "acme/web" }],
+      state: "open",
+    } as const;
+
+    yield* service.list(input);
+    yield* service.setState({
+      host: "github.com",
+      repository: "acme/web",
+      number: 1,
+      state: "closed",
     });
     yield* service.list(input);
     expect(reads).toBe(2);

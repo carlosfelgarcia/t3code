@@ -7,6 +7,7 @@ import {
   type IssueListResult,
   type IssueListState,
   type IssueRef,
+  type IssueState,
   type IssueSummary,
   type PullRequestLabel,
 } from "@t3tools/contracts";
@@ -78,6 +79,8 @@ import {
   issueRepositories,
   issueRepositoryKey,
   issueRowLabels,
+  issueRowState,
+  type IssueStateEdit,
   projectsForRepository,
 } from "./issues.logic";
 
@@ -194,6 +197,10 @@ export function IssuesPage() {
   );
   const [refreshing, setRefreshing] = useState(false);
   const [labelEdits, setLabelEdits] = useState<ReadonlyMap<string, IssueLabelEdit>>(new Map());
+  const [stateEdits, setStateEdits] = useState<ReadonlyMap<string, IssueStateEdit>>(new Map());
+  const [changingState, setChangingState] = useState<ReadonlySet<string>>(NO_ISSUE_KEYS);
+  const setIssueState = useAtomCommand(issueEnvironment.setState, { reportFailure: false });
+  const canChangeState = useAtomValue(issueEnvironment.setState.permissionAtom(environmentId));
   const { start: startThread } = useStartIssueThread();
 
   const loadedPages = useAtomValue(
@@ -277,6 +284,8 @@ export function IssuesPage() {
     const environmentLabel = (environmentId: EnvironmentId) =>
       environments.find((environment) => environment.environmentId === environmentId)?.label ??
       environmentId;
+    const nextState =
+      issueRowState(issue, stateEdits.get(issueKey(issue))) === "open" ? "closed" : "open";
     void showPullRequestLinkContextMenu({
       url: issue.url,
       openLabel: "Open on GitHub",
@@ -296,8 +305,21 @@ export function IssuesPage() {
               label: "Start thread",
               ...(issueProjects.length === 0 ? { disabled: true } : {}),
             },
+        ...(canChangeState
+          ? [
+              {
+                id: "change-state",
+                label: nextState === "closed" ? "Close issue" : "Reopen issue",
+                ...(changingState.has(issueKey(issue)) ? { disabled: true } : {}),
+              },
+            ]
+          : []),
       ],
       onAction: (action) => {
+        if (action === "change-state") {
+          void changeIssueState(issue, nextState);
+          return;
+        }
         const project = issueProjects[Number(action.slice("start-thread:".length))];
         if (project !== undefined) void startThread(issue, project);
       },
@@ -312,6 +334,32 @@ export function IssuesPage() {
     for (const input of pageInputs) {
       if (input !== null) registry.refresh(issueEnvironment.list({ environmentId, input }));
     }
+  };
+  const changeIssueState = async (issue: IssueSummary, state: IssueState) => {
+    const key = issueKey(issue);
+    if (environmentId === null || changingState.has(key)) return;
+    setChangingState((current) => new Set(current).add(key));
+    const { host, repository, number } = issue;
+    const result = await setIssueState({
+      environmentId,
+      input: { host, repository, number, state },
+    });
+    setChangingState((current) => new Set([...current].filter((entry) => entry !== key)));
+    if (result._tag === "Failure") {
+      toastManager.add({
+        type: "error",
+        title: `Could not ${state === "closed" ? "close" : "reopen"} #${number}`,
+        description: readableFailure(
+          squashAtomCommandFailure(result),
+          `You don't have permission to close or reopen issues in ${repository}.`,
+        ),
+      });
+      return;
+    }
+    setStateEdits((current) =>
+      new Map(current).set(key, { staleUpdatedAt: issue.updatedAt, state }),
+    );
+    refreshList();
   };
   const refreshFromGitHub = async () => {
     if (environmentId === null) return;
@@ -418,6 +466,7 @@ export function IssuesPage() {
               selection={visibleSelection}
               selecting={selecting}
               labelEdits={labelEdits}
+              stateEdits={stateEdits}
               onClickIssue={clickIssue}
               onCheckIssue={checkIssue}
               onIssueMenu={openIssueMenu}
@@ -583,6 +632,9 @@ export function IssuesPage() {
               setLabelEdits((current) => new Map(current).set(issueKey(issue), edit));
               refreshList();
             }}
+            stateEdit={stateEdits.get(issueKey(selected))}
+            changingState={changingState.has(issueKey(selected))}
+            onChangeState={(issue, state) => void changeIssueState(issue, state)}
           />
         ) : null}
       </div>
@@ -606,6 +658,7 @@ function IssueListPage({
   selection,
   selecting,
   labelEdits,
+  stateEdits,
   onClickIssue,
   onCheckIssue,
   onIssueMenu,
@@ -619,6 +672,7 @@ function IssueListPage({
   selection: ReadonlySet<string>;
   selecting: boolean;
   labelEdits: ReadonlyMap<string, IssueLabelEdit>;
+  stateEdits: ReadonlyMap<string, IssueStateEdit>;
   onClickIssue: (issue: IssueSummary, event: React.MouseEvent) => void;
   onCheckIssue: (issue: IssueSummary, event: Event) => void;
   onIssueMenu: (issue: IssueSummary, position: MenuPosition) => void;
@@ -665,6 +719,7 @@ function IssueListPage({
           key={issueKey(issue)}
           issue={issue}
           labels={issueRowLabels(issue, labelEdits.get(issueKey(issue)))}
+          state={issueRowState(issue, stateEdits.get(issueKey(issue)))}
           current={current !== null && issueKey(current) === issueKey(issue)}
           checked={selection.has(issueKey(issue))}
           selecting={selecting}
@@ -687,6 +742,7 @@ function IssueListPage({
 function IssueRow({
   issue,
   labels,
+  state,
   current,
   checked,
   selecting,
@@ -696,6 +752,7 @@ function IssueRow({
 }: {
   issue: IssueSummary;
   labels: IssueSummary["labels"];
+  state: IssueState;
   current: boolean;
   checked: boolean;
   selecting: boolean;
@@ -737,7 +794,7 @@ function IssueRow({
         onClick={(event) => onClick(issue, event)}
       >
         <span className="flex w-4 shrink-0 flex-col items-center">
-          <IssueStateGlyph state={issue.state} />
+          <IssueStateGlyph state={state} />
         </span>
         <PullRequestRowLines
           number={<span className={PULL_REQUEST_ROW_NUMBER_CLASS}>#{issue.number}</span>}

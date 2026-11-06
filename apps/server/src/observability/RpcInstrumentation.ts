@@ -139,6 +139,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.issuesDetail]: "issues",
   [WS_METHODS.issuesLabelCandidates]: "issues",
   [WS_METHODS.issuesSetLabels]: "issues",
+  [WS_METHODS.issuesSetState]: "issues",
   [WS_METHODS.issuesInvalidate]: "issues",
   [WS_METHODS.sourceControlLookupRepository]: "source-control",
   [WS_METHODS.sourceControlCloneRepository]: "source-control",

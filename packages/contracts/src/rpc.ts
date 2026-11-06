@@ -179,6 +179,7 @@ import {
 import {
   IssueDetail,
   IssueLabelChangeInput,
+  IssueStateChangeInput,
   IssueListInput,
   IssueListResult,
   IssueOperationError,
@@ -610,6 +611,7 @@ export const WS_METHODS = {
   issuesDetail: "issues.detail",
   issuesLabelCandidates: "issues.labelCandidates",
   issuesSetLabels: "issues.setLabels",
+  issuesSetState: "issues.setState",
   issuesInvalidate: "issues.invalidate",
 
   sourceControlLookupRepository: "sourceControl.lookupRepository",
@@ -1257,6 +1259,12 @@ const WsIssuesLabelCandidatesRpc = Rpc.make(WS_METHODS.issuesLabelCandidates, {
 
 const WsIssuesSetLabelsRpc = Rpc.make(WS_METHODS.issuesSetLabels, {
   payload: IssueLabelChangeInput,
+  success: Schema.Void,
+  error: IssueRpcError,
+});
+
+const WsIssuesSetStateRpc = Rpc.make(WS_METHODS.issuesSetState, {
+  payload: IssueStateChangeInput,
   success: Schema.Void,
   error: IssueRpcError,
 });
@@ -2185,6 +2193,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsIssuesDetailRpc,
   WsIssuesLabelCandidatesRpc,
   WsIssuesSetLabelsRpc,
+  WsIssuesSetStateRpc,
   WsIssuesInvalidateRpc,
   WsSourceControlLookupRepositoryRpc,
   WsSourceControlCloneRepositoryRpc,

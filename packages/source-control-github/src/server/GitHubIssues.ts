@@ -169,9 +169,14 @@ const describe = (
     case "not-found":
       return `GitHub could not find it in ${where}, or this environment's credential cannot see it.`;
     case "forbidden":
-      return operation === "setIssueLabels"
-        ? `You don't have permission to change labels in ${where}.`
-        : `GitHub refused access to ${where}.`;
+      switch (operation) {
+        case "setIssueLabels":
+          return `You don't have permission to change labels in ${where}.`;
+        case "setIssueState":
+          return `You don't have permission to close or reopen issues in ${where}.`;
+        default:
+          return `GitHub refused access to ${where}.`;
+      }
     case "unsupported":
       return "Issues currently support GitHub only.";
     case "failed":
@@ -314,6 +319,20 @@ export const make = Effect.gen(function* () {
     },
   );
 
+  const setState: SourceControlIssues["setState"] = Effect.fn("GitHubIssues.setState")(
+    function* (input) {
+      yield* api
+        .rest({
+          host: input.host,
+          operation: "setIssueState",
+          method: "PATCH",
+          path: issuePath(input),
+          body: { state: input.state },
+        })
+        .pipe(Effect.mapError(toIssueError("setIssueState", input.host, input.repository)));
+    },
+  );
+
   const read = <A>(
     ref: Pick<IssueRef, "host" | "repository">,
     operation: string,
@@ -439,5 +458,6 @@ export const make = Effect.gen(function* () {
     detail,
     labelCandidates,
     setLabels,
+    setState,
   } satisfies SourceControlIssues;
 });

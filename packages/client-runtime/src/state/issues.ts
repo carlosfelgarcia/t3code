@@ -36,6 +36,14 @@ export function createIssueEnvironmentAtoms<R, E>(
           registry.refresh(labelCandidates(ref));
         }),
     }),
+    setState: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:issues:set-state",
+      tag: WS_METHODS.issuesSetState,
+      onSuccess: ({ environmentId, input: { host, repository, number } }, registry) =>
+        Effect.sync(() => {
+          registry.refresh(detail({ environmentId, input: { host, repository, number } }));
+        }),
+    }),
     /** Drops the server's shared reads, so only a person's refresh spends GitHub requests. */
     invalidate: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:issues:invalidate",

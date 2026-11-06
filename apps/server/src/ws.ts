@@ -2857,6 +2857,7 @@ export const layerWsRpc = (
         [WS_METHODS.issuesDetail]: (input) => issues.detail(input),
         [WS_METHODS.issuesLabelCandidates]: (input) => issues.labelCandidates(input),
         [WS_METHODS.issuesSetLabels]: (input) => issues.setLabels(input),
+        [WS_METHODS.issuesSetState]: (input) => issues.setState(input),
         [WS_METHODS.issuesInvalidate]: () => issues.invalidate,
         [WS_METHODS.sourceControlStar]: (input) => sourceControlSignIn.star(input),
         [WS_METHODS.projectCloneStart]: (input) =>

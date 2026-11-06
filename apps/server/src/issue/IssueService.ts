@@ -7,6 +7,7 @@ import {
   type IssueListResult,
   IssueOperationError,
   type IssueRef,
+  type IssueStateChangeInput,
   type IssueSummary,
   type PullRequestLabelCandidateList,
 } from "@t3tools/contracts";
@@ -35,6 +36,7 @@ export class IssueService extends Context.Service<
       ref: IssueRef,
     ) => Effect.Effect<PullRequestLabelCandidateList, IssueOperationError>;
     readonly setLabels: (input: IssueLabelChangeInput) => Effect.Effect<void, IssueOperationError>;
+    readonly setState: (input: IssueStateChangeInput) => Effect.Effect<void, IssueOperationError>;
     readonly invalidate: Effect.Effect<void>;
   }
 >()("t3/issue/IssueService") {}
@@ -164,6 +166,10 @@ export const make = Effect.gen(function* () {
     }),
     setLabels: Effect.fn("IssueService.setLabels")(function* (input) {
       yield* (yield* issuesFor(input.host, "setIssueLabels")).setLabels(input);
+      epoch++;
+    }),
+    setState: Effect.fn("IssueService.setState")(function* (input) {
+      yield* (yield* issuesFor(input.host, "setIssueState")).setState(input);
       epoch++;
     }),
     invalidate: Effect.sync(() => {
