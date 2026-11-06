@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
-import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useEnvironments } from "~/state/environments";
 import { issueEnvironment } from "~/state/issues";
@@ -33,7 +32,8 @@ import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
 import { PullRequestCandidatePicker } from "../pullRequest/PullRequestCandidatePicker";
 import { PullRequestCommentBody } from "../pullRequest/PullRequestCommentBody";
-import { handoffPrompt, readableFailure } from "../pullRequest/pullRequestDetail.logic";
+import { readableFailure } from "../pullRequest/pullRequestDetail.logic";
+import { writeHandoffToComposer } from "../pullRequest/usePullRequestActions";
 import { LabelCandidateRow, labelCandidateMatches } from "../pullRequest/PullRequestLabelPicker";
 import { PullRequestMarkdown } from "../pullRequest/PullRequestMarkdown";
 import { PullRequestRowAuthor } from "../pullRequest/PullRequestListRow";
@@ -46,7 +46,6 @@ import {
   projectsForRepository,
 } from "./issues.logic";
 
-const lastIssuePromptByDraft = new Map<DraftId, string>();
 const NO_OVERRIDES: ReadonlyMap<string, boolean> = new Map();
 
 export function IssueDetailPanel({
@@ -374,19 +373,7 @@ export function useStartIssueThread() {
       });
       return;
     }
-    const store = useComposerDraftStore.getState();
-    const task = issueThreadPrompt(issue);
-    store.setPrompt(
-      session.draftId,
-      handoffPrompt(
-        {
-          prompt: store.getComposerDraft(session.draftId)?.prompt ?? "",
-          lastHandoffPrompt: lastIssuePromptByDraft.get(session.draftId),
-        },
-        task,
-      ),
-    );
-    lastIssuePromptByDraft.set(session.draftId, task);
+    writeHandoffToComposer(session.draftId, { prompt: issueThreadPrompt(issue) });
   };
   return { start, opening };
 }
