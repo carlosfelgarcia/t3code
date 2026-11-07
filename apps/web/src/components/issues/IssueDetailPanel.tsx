@@ -4,6 +4,7 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import type {
   EnvironmentId,
   IssueDetail,
+  ScopedThreadRef,
   IssueRef,
   IssueState,
   IssueSummary,
@@ -19,9 +20,11 @@ import {
   ExternalLinkIcon,
   MessageSquarePlusIcon,
   TagIcon,
+  TextCursorInputIcon,
 } from "lucide-react";
 import { useState } from "react";
 
+import type { DraftId } from "~/composerDraftStore";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useEnvironments } from "~/state/environments";
 import { issueEnvironment } from "~/state/issues";
@@ -65,6 +68,7 @@ export function IssueDetailPanel({
   stateEdit,
   changingState,
   onChangeState,
+  composerDraftTarget,
 }: {
   environmentId: EnvironmentId;
   reference: IssueRef;
@@ -75,7 +79,10 @@ export function IssueDetailPanel({
   stateEdit: IssueStateEdit | undefined;
   changingState: boolean;
   onChangeState: (issue: IssueSummary, state: IssueState) => void;
+  /** The thread whose panel shows this issue; set only there, so only there it can be added. */
+  composerDraftTarget?: ScopedThreadRef | DraftId | undefined;
 }) {
+  const compact = composerDraftTarget !== undefined;
   const query = useEnvironmentQuery(issueEnvironment.detail({ environmentId, input: reference }));
   const detail = query.data;
   const issueProjects = projectsForRepository(projects, reference);
@@ -93,13 +100,30 @@ export function IssueDetailPanel({
         {detail ? (
           <>
             <IssueStartThread detail={detail} projects={issueProjects} />
+            {composerDraftTarget === undefined ? null : (
+              <Button
+                variant="outline"
+                size="sm"
+                title="Add a reference to this issue to the thread's composer"
+                onClick={() => {
+                  writeHandoffToComposer(composerDraftTarget, {
+                    prompt: issueThreadPrompt(detail),
+                  });
+                  toastManager.add({ type: "success", title: "Added to the composer" });
+                }}
+              >
+                <TextCursorInputIcon />
+                Add to composer
+              </Button>
+            )}
             <Button
               variant="outline"
-              size="sm"
+              size={compact ? "icon-sm" : "sm"}
+              aria-label="Open on GitHub"
               render={<a href={detail.url} target="_blank" rel="noopener noreferrer" />}
             >
               <ExternalLinkIcon />
-              Open on GitHub
+              {compact ? null : "Open on GitHub"}
             </Button>
           </>
         ) : null}

@@ -66,6 +66,15 @@ export function issueRepositories(
     .map(([, repository]) => repository);
 }
 
+/** One project's repositories, the one its Issues panel opens on first: a fork's own `origin`. */
+export function projectIssueRepositories(project: IssueProject): ReadonlyArray<IssueRepository> {
+  const [own, fork] = issueRepositoriesOf(project);
+  if (own === undefined) return [];
+  return fork === undefined || issueRepositoryKey(fork) === issueRepositoryKey(own)
+    ? [own]
+    : [fork, own];
+}
+
 export function projectsForRepository<Project extends IssueProject>(
   projects: ReadonlyArray<Project>,
   repository: IssueRepository,

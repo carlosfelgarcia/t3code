@@ -70,6 +70,7 @@ it.effect("lists each repository once and merges hosts, newest created first", (
             : {
                 issues: [issue("ghe.acme.dev", "acme/api", 1, "2026-10-02T00:00:00Z")],
                 hasMore: true,
+                issuesDisabled: ["acme/api"],
               };
         }),
     });
@@ -115,6 +116,7 @@ it.effect("lists each repository once and merges hosts, newest created first", (
     ]);
     expect(result.hasMore).toBe(true);
     expect(result.errors).toEqual([]);
+    expect(result.disabledRepositories).toEqual([{ host: "ghe.acme.dev", repository: "acme/api" }]);
     expect(result.author).toBe("OdCgarcia");
   }),
 );

@@ -88,6 +88,8 @@ export const IssueListResult = Schema.Struct({
   hasMore: Schema.Boolean,
   /** Hosts that could not be read; the issues from the others still list. */
   errors: Schema.Array(IssueListHostError),
+  /** Set when an empty first page listed one repository and its Issues are turned off. */
+  disabledRepositories: Schema.optional(Schema.Array(IssueRepository)),
   /** The author filter applied. Servers older than the filter drop it, so this is missing. */
   author: Schema.optional(TrimmedNonEmptyString),
 });

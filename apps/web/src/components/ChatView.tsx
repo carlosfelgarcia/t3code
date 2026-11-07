@@ -2352,6 +2352,8 @@ export default function ChatView(props: ChatViewProps) {
     addDeviceSurfaceStable,
     addDiffSurfaceStable,
     addFilesSurfaceStable,
+    addGitTreeSurfaceStable,
+    addIssuesSurfaceStable,
     addPullRequestSurfaceStable,
     addPullRequestsSurfaceStable,
     closePreviewPanelStable,
@@ -3948,6 +3950,8 @@ export default function ChatView(props: ChatViewProps) {
                   {...(isServerThread && isGitRepo
                     ? { onOpenChanges: openChangesFromThreadPanelStable }
                     : {})}
+                  onOpenIssues={addIssuesSurfaceStable}
+                  onOpenGitTree={addGitTreeSurfaceStable}
                   onRunProjectScript={runProjectScriptStable}
                   onAddProjectScript={saveProjectScriptStable}
                   onUpdateProjectScript={updateProjectScriptStable}

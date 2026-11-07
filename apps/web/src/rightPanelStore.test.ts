@@ -1067,6 +1067,50 @@ describe("rightPanelStore", () => {
     }
   });
 
+  it("keeps one Issues and one Git tree tab per thread, and the open issue across a reload", async () => {
+    const store = useRightPanelStore.getState();
+    const issue = { host: "github.com", repository: "acme/web", number: 7 };
+    store.open(refA, "issues");
+    store.open(refA, "git-tree");
+    store.open(refA, "issues");
+    store.setIssuesView(refA, { repo: "github.com/acme/web", issue });
+    store.open(refB, "issues");
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "issues",
+      surfaces: [
+        { id: "issues", kind: "issues", repo: "github.com/acme/web", issue },
+        { id: "git-tree", kind: "git-tree" },
+      ],
+    });
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refB)).toEqual({
+      id: "issues",
+      kind: "issues",
+    });
+
+    await reloadRightPanelStore();
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      id: "issues",
+      kind: "issues",
+      repo: "github.com/acme/web",
+      issue,
+    });
+
+    store.setIssuesView(refA, { repo: "github.com/acme/web" });
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      id: "issues",
+      kind: "issues",
+      repo: "github.com/acme/web",
+    });
+    store.closeSurface(refA, "issues");
+    store.open(refA, "issues");
+    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      id: "issues",
+      kind: "issues",
+    });
+  });
+
   it("keeps matching repository and number on different hosts as separate tabs", () => {
     const first = { projectId: "project-a", repository: "acme/api", number: 7, host: "github.com" };
     const second = { ...first, host: "github.example.com" };

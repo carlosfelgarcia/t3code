@@ -3,7 +3,13 @@ import {
   scopedThreadKey,
   scopeThreadRef,
 } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, RunId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  type IssueRef,
+  RunId,
+  ThreadId,
+  type ScopedThreadRef,
+} from "@t3tools/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -22,6 +28,8 @@ const RIGHT_PANEL_KINDS = [
   "pull-request",
   "pull-requests",
   "side-chat",
+  "issues",
+  "git-tree",
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
@@ -76,7 +84,20 @@ export type RightPanelSurface =
       detailTab?: PullRequestDetailTab;
     }
   | { id: "pull-requests"; kind: "pull-requests" }
-  | { id: `side-chat:${string}`; kind: "side-chat"; threadId: ThreadId };
+  | { id: `side-chat:${string}`; kind: "side-chat"; threadId: ThreadId }
+  | {
+      id: "issues";
+      kind: "issues";
+      /** Chosen repository as `host/owner/name`; absent opens the project's default. */
+      repo?: string;
+      issue?: IssueRef;
+    }
+  | { id: "git-tree"; kind: "git-tree" };
+
+export type IssuesPanelSelection = Pick<
+  Extract<RightPanelSurface, { kind: "issues" }>,
+  "repo" | "issue"
+>;
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
 const RIGHT_PANEL_STORAGE_VERSION = 14;
@@ -156,6 +177,7 @@ interface RightPanelStoreState {
     surfaceId: string,
     detailTab: PullRequestDetailTab,
   ) => void;
+  setIssuesView: (ref: ScopedThreadRef, view: IssuesPanelSelection) => void;
   openTerminal: (ref: ScopedThreadRef, terminalId: string) => void;
   splitTerminal: (
     ref: ScopedThreadRef,
@@ -219,6 +241,10 @@ const singletonSurface = (
       return { id: "pull-requests", kind };
     case "device":
       return { id: "device", kind };
+    case "issues":
+      return { id: "issues", kind };
+    case "git-tree":
+      return { id: "git-tree", kind };
   }
 };
 
@@ -781,6 +807,22 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             ),
           }));
         }),
+      setIssuesView: (ref, view) =>
+        set((state) =>
+          automaticUpdate(state, scopedThreadKey(ref), (current) => ({
+            ...current,
+            surfaces: current.surfaces.map((surface) =>
+              surface.kind === "issues"
+                ? {
+                    id: surface.id,
+                    kind: surface.kind,
+                    ...(view.repo === undefined ? {} : { repo: view.repo }),
+                    ...(view.issue === undefined ? {} : { issue: view.issue }),
+                  }
+                : surface,
+            ),
+          })),
+        ),
       openFile: (ref, requestedPath, line) =>
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) => {

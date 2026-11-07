@@ -71,10 +71,13 @@ export interface SourceControlIssueListInput {
 /** Issue reads and edits. Only GitHub has them; there is no shared issue abstraction. */
 export interface SourceControlIssues {
   /** Most recently updated first. Never includes pull requests. */
-  readonly list: (
-    input: SourceControlIssueListInput,
-  ) => Effect.Effect<
-    { readonly issues: ReadonlyArray<IssueSummary>; readonly hasMore: boolean },
+  readonly list: (input: SourceControlIssueListInput) => Effect.Effect<
+    {
+      readonly issues: ReadonlyArray<IssueSummary>;
+      readonly hasMore: boolean;
+      /** Set when an empty first page searched one repository and its Issues are turned off. */
+      readonly issuesDisabled?: ReadonlyArray<string>;
+    },
     IssueOperationError
   >;
   readonly detail: (ref: IssueRef) => Effect.Effect<IssueDetail, IssueOperationError>;
