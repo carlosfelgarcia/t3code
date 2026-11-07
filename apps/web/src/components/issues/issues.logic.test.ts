@@ -16,6 +16,7 @@ import {
   issueBulkLabels,
   issueRepositories,
   issueRowLabels,
+  projectIssueRepositories,
   issueRowState,
   projectsForRepository,
 } from "./issues.logic";
@@ -71,6 +72,35 @@ describe("issueRepositories", () => {
     expect(
       projectsForRepository([upstreamOnly, withFork], { host: "github.com", repository: "Me/Web" }),
     ).toEqual([withFork]);
+  });
+});
+
+describe("projectIssueRepositories", () => {
+  it("puts a fork's own repository first, ahead of its upstream", () => {
+    expect(projectIssueRepositories({ repositoryIdentity: github("acme", "web", fork) })).toEqual([
+      { host: "github.com", repository: "me/web" },
+      { host: "github.com", repository: "acme/web" },
+    ]);
+  });
+
+  it("falls back to the upstream when the fork is not on GitHub", () => {
+    const gitlabFork = {
+      canonicalKey: "gitlab.com/me/web",
+      remoteUrl: "https://gitlab.com/me/web.git",
+      displayName: "me/web",
+    };
+    expect(
+      projectIssueRepositories({ repositoryIdentity: github("acme", "web", gitlabFork) }),
+    ).toEqual([{ host: "github.com", repository: "acme/web" }]);
+  });
+
+  it("lists a plain repository alone, and nothing for a scratch project", () => {
+    expect(projectIssueRepositories({ repositoryIdentity: github("acme", "web") })).toEqual([
+      { host: "github.com", repository: "acme/web" },
+    ]);
+    expect(
+      projectIssueRepositories({ repositoryIdentity: github("acme", "web"), isScratch: true }),
+    ).toEqual([]);
   });
 });
 

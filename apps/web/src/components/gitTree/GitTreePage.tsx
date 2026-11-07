@@ -95,6 +95,8 @@ export function GitTreePage() {
         <GitTreeView
           key={projectKey(project)}
           project={project}
+          cwd={project.workspaceRoot}
+          layout="page"
           projectPicker={
             projectOptions.length > 1 ? (
               <PullRequestCompactFilterMenu
@@ -136,15 +138,19 @@ function PageMessage({ children }: { children: React.ReactNode }) {
 
 type Operation = "pull" | "push" | "fetch" | "clean" | "refresh";
 
-function GitTreeView({
+/** `cwd` is the checkout the graph marks as current and Pull and Push act on. */
+export function GitTreeView({
   project,
-  projectPicker,
+  cwd,
+  layout,
+  projectPicker = null,
 }: {
   project: EnvironmentProject;
-  projectPicker: React.ReactNode;
+  cwd: string;
+  layout: "page" | "panel";
+  projectPicker?: React.ReactNode;
 }) {
   const { environmentId } = project;
-  const cwd = project.workspaceRoot;
   const { data, error, loadingMore, reload, loadMore } = useGitTreeData(environmentId, cwd);
   const [running, setRunning] = useState<Operation | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -255,7 +261,12 @@ function GitTreeView({
   const writeTitle = canWrite ? undefined : "Needs source control write access";
 
   const toolbar = (
-    <div className="flex shrink-0 items-center gap-1">
+    <div
+      className={cn(
+        "flex shrink-0 items-center gap-1",
+        layout === "panel" && "flex-wrap px-3 py-2",
+      )}
+    >
       {projectPicker}
       <Button
         size="sm"
@@ -327,10 +338,13 @@ function GitTreeView({
       return <PageMessage>{project.title} is not a Git repository.</PageMessage>;
     }
     return (
-      <div className="flex min-h-0 flex-1 border-t border-border/60">
+      <div className="@container/git-tree flex min-h-0 flex-1 border-t border-border/60">
         <aside
           aria-label="Branches"
-          className="flex w-72 shrink-0 flex-col overflow-y-auto border-r border-border/60 py-2"
+          className={cn(
+            "flex shrink-0 flex-col overflow-y-auto border-r border-border/60 py-2",
+            layout === "page" ? "w-72" : "w-56 @2xl/git-tree:w-72",
+          )}
         >
           {data.refs.map((ref) => (
             <BranchRow
@@ -385,7 +399,7 @@ function GitTreeView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <GitTreeHeader>{toolbar}</GitTreeHeader>
+      {layout === "page" ? <GitTreeHeader>{toolbar}</GitTreeHeader> : toolbar}
       {body}
     </div>
   );

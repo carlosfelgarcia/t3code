@@ -304,6 +304,13 @@ Ctrl/Cmd+A in the list) covers only the issues loaded so far, and changing a fil
 selection. A selection across repositories offers only the labels they all have. Right-click an
 issue to start a thread from it, copy its link, or open it on GitHub.
 
+To read issues beside a thread, choose **Issues** in the thread's details card or **Open Issues in
+panel** in the command palette. It opens a tab in the thread's right panel listing the issues of
+that thread's project. A fork opens on your own repository, with a filter to switch to its
+upstream; if your fork has Issues turned off, the tab says so and offers the upstream instead. The
+tab remembers the issue you opened when you switch tabs or reload. An issue opened there also has
+**Add to composer**, which puts its number, title, and link in that thread's composer.
+
 An issue with open blockers is marked in the list with the blocking issues' numbers; hover the
 mark for their titles. An opened issue lists what it is blocked by and what it is blocking, including
 closed ones, and selecting one opens it. Blockers are set on GitHub. GitHub Enterprise Server
@@ -318,8 +325,10 @@ duplicate, use GitHub.
 
 **Git Tree**, at the bottom of the sidebar, in the command palette, or as **Open Git Tree** when you
 right-click a thread, shows one project's local
-branches and commit graph, and handles routine branch housekeeping. It always works on the
-project's own folder, never a thread's worktree. Branches show how far they are ahead of and
+branches and commit graph, and handles routine branch housekeeping. The page works on the
+project's own folder. **Git Tree** in a thread's details card, or **Open Git Tree in panel** in the
+command palette, opens it in the thread's right panel on that thread's checkout instead, its
+worktree when it has one, so **Pull** and **Push** act on the thread's branch. Branches show how far they are ahead of and
 behind their upstream, and mark an upstream that was deleted on the remote as **gone** once you
 run **Fetch & prune**. The graph covers local branches, their upstreams and the default branch,
 200 commits at a time.

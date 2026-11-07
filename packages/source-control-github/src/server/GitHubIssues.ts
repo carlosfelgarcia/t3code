@@ -90,6 +90,7 @@ const decodeLabels = decodeJsonResult(Schema.Array(RawRepositoryLabel));
 const decodeSearch = decodeJsonResult(
   Schema.Struct({ total_count: Schema.Number, items: Schema.Array(RawIssue) }),
 );
+const decodeRepositorySettings = decodeJsonResult(Schema.Struct({ has_issues: Schema.Boolean }));
 
 const toActor = (user: typeof RawUser.Type | null): PullRequestActor | null =>
   user === null || user.login.trim().length === 0
@@ -285,6 +286,20 @@ export const make = Effect.gen(function* () {
     Effect.orElseSucceed(() => new Map<string, ReadonlyArray<LinkedIssue>>()),
   );
 
+  // Search lists nothing for a repository with Issues turned off rather than refusing it.
+  const issuesTurnedOff = Effect.fn("GitHubIssues.issuesTurnedOff")(
+    function* (host: string, repository: string) {
+      const response = yield* api.rest({
+        host,
+        operation: "readRepositorySettings",
+        path: repositoryPath(repository),
+      });
+      const decoded = decodeRepositorySettings(response.body);
+      return Result.isSuccess(decoded) && !decoded.success.has_issues;
+    },
+    Effect.orElseSucceed(() => false),
+  );
+
   const list: SourceControlIssues["list"] = Effect.fn("GitHubIssues.list")(function* (input) {
     const params = new URLSearchParams({
       q: searchQuery(input),
@@ -306,6 +321,15 @@ export const make = Effect.gen(function* () {
           : [],
       ),
     );
+    const [only] = input.repositories;
+    const issuesDisabled =
+      input.page === 1 &&
+      items.length === 0 &&
+      input.repositories.length === 1 &&
+      only !== undefined &&
+      (yield* issuesTurnedOff(input.host, only))
+        ? [only]
+        : [];
     return {
       issues: items.map((raw) => {
         const summary = toSummary(input.host, raw);
@@ -313,6 +337,7 @@ export const make = Effect.gen(function* () {
         return named === undefined ? summary : { ...summary, openBlockers: named };
       }),
       hasMore: input.page * input.perPage < Math.min(answer.total_count, SEARCH_RESULT_CAP),
+      ...(issuesDisabled.length === 0 ? {} : { issuesDisabled }),
     };
   });
 

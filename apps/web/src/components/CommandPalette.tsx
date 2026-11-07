@@ -59,6 +59,7 @@ import {
   ChartNoAxesColumnIcon,
   CheckIcon,
   ChevronRightIcon,
+  CircleDotIcon,
   CornerLeftUpIcon,
   FileSearchIcon,
   FolderGit2Icon,
@@ -163,6 +164,7 @@ import {
   useCommandPaletteStore,
 } from "../commandPaletteStore";
 import { PULL_REQUESTS_PANEL_REF, useRightPanelStore } from "../rightPanelStore";
+import { projectIssueRepositories } from "./issues/issues.logic";
 import { getLatestThreadForProject, sortThreads } from "@t3tools/client-runtime/state/thread-sort";
 import {
   cn,
@@ -1606,6 +1608,41 @@ function OpenCommandPaletteDialog(props: {
       await navigate({ to: "/git-tree" });
     },
   });
+
+  const activeThreadProject =
+    activeThread === null
+      ? undefined
+      : projects.find(
+          (project) =>
+            project.environmentId === activeThread.environmentId &&
+            project.id === activeThread.projectId &&
+            project.isScratch !== true,
+        );
+  if (activeThread !== null && activeThreadProject !== undefined) {
+    const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
+    if (projectIssueRepositories(activeThreadProject).length > 0) {
+      actionItems.push({
+        kind: "action",
+        value: "action:open-thread-issues",
+        searchTerms: ["issues", "github", "panel", "bugs", "tickets"],
+        title: "Open Issues in panel",
+        icon: <CircleDotIcon className={ITEM_ICON_CLASS} />,
+        run: async () => {
+          useRightPanelStore.getState().open(threadRef, "issues");
+        },
+      });
+    }
+    actionItems.push({
+      kind: "action",
+      value: "action:open-thread-git-tree",
+      searchTerms: ["git", "tree", "graph", "branches", "commits", "panel"],
+      title: "Open Git Tree in panel",
+      icon: <GitGraphIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        useRightPanelStore.getState().open(threadRef, "git-tree");
+      },
+    });
+  }
 
   actionItems.push({
     kind: "action",

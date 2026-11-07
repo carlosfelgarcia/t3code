@@ -1,3 +1,4 @@
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type {
   EditorId,
   EnvironmentId,
@@ -19,6 +20,7 @@ import ProjectScriptsControl, {
 import { memo, useState, type ComponentProps } from "react";
 import { ThreadDetailsCard } from "./ThreadDetailsCard";
 import { ThreadDetailsCleanRepoRow } from "./ThreadDetailsCleanRepoRow";
+import { ThreadDetailsViewRow } from "./ThreadDetailsViewRow";
 import { OpenInPicker } from "./OpenInPicker";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
@@ -33,7 +35,9 @@ import { ThreadDetailsItemsMenuItems } from "./ThreadDetailsItemsMenu";
 import { resolveThreadDetailsVisibility, THREAD_DETAILS_ITEMS } from "./threadDetailsItems";
 import { useClientSettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
-import { SlidersHorizontalIcon } from "lucide-react";
+import { useProject } from "../../state/entities";
+import { projectIssueRepositories } from "../issues/issues.logic";
+import { CircleDotIcon, GitGraphIcon, SlidersHorizontalIcon } from "lucide-react";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import {
   THREAD_DETAILS_PANEL_ICON_CLASS,
@@ -77,6 +81,8 @@ interface ThreadDetailsPanelProps extends Pick<
   onCheckoutPullRequestRequest?: (reference: string) => void;
   onComposerFocusRequest: () => void;
   onOpenChanges?: () => void;
+  onOpenIssues: () => void;
+  onOpenGitTree: () => void;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<ProjectScriptActionResult>;
   onUpdateProjectScript: (
@@ -95,6 +101,8 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
     props.activeProjectScripts && visible.scripts ? props.gitCwd : null,
   );
   const activeThreadRef = { environmentId: props.environmentId, threadId: props.threadId };
+  const project = useProject(scopeProjectRef(props.environmentId, props.projectId));
+  const hasIssueRepository = project !== null && projectIssueRepositories(project).length > 0;
   const branchToolbarProps = {
     showGitControls: props.isGitRepo,
     environmentId: props.environmentId,
@@ -159,6 +167,8 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
             props.gitCwd !== null &&
             props.activeProjectName !== undefined &&
             (visible.gitActions || (visible.changes && props.isGitRepo)),
+          issues: density === "full" && hasIssueRepository && visible.issues,
+          gitTree: density === "full" && props.isGitRepo && visible.gitTree,
           cleanRepo: density === "full" && props.isGitRepo && visible.cleanRepo,
         };
         return (
@@ -214,7 +224,8 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 </ThreadDetailsSection>
               ) : null}
 
-              {props.gitCwd && (show.branch || show.git || show.cleanRepo) ? (
+              {props.gitCwd &&
+              (show.branch || show.git || show.issues || show.gitTree || show.cleanRepo) ? (
                 <ThreadDetailsSection
                   headingId="thread-details-version-control-heading"
                   title="Version Control"
@@ -234,6 +245,22 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                         activeThreadRef={activeThreadRef}
                         {...(props.draftId ? { draftId: props.draftId } : {})}
                         {...(props.onOpenChanges ? { onOpenChanges: props.onOpenChanges } : {})}
+                      />
+                    ) : null}
+                    {show.issues ? (
+                      <ThreadDetailsViewRow
+                        Icon={CircleDotIcon}
+                        label="Issues"
+                        title="Show this repository's GitHub issues in the panel"
+                        onOpen={props.onOpenIssues}
+                      />
+                    ) : null}
+                    {show.gitTree ? (
+                      <ThreadDetailsViewRow
+                        Icon={GitGraphIcon}
+                        label="Git Tree"
+                        title="Show the commit graph and branches of this thread's checkout in the panel"
+                        onOpen={props.onOpenGitTree}
                       />
                     ) : null}
                     {show.cleanRepo ? (

@@ -130,10 +130,16 @@ export const make = Effect.gen(function* () {
         return true;
       })
       .toSorted(byNewestCreated);
+    const disabledRepositories = reads.flatMap(({ host, result }) =>
+      result._tag === "Success"
+        ? (result.success.issuesDisabled ?? []).map((repository) => ({ host, repository }))
+        : [],
+    );
     return {
       issues,
       hasMore: reads.some(({ result }) => result._tag === "Success" && result.success.hasMore),
       errors: failures.map(({ host, error }) => ({ host, message: error.message })),
+      ...(disabledRepositories.length === 0 ? {} : { disabledRepositories }),
       ...(key.author === null ? {} : { author: key.author }),
     } satisfies IssueListResult;
   });

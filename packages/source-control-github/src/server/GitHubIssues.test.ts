@@ -172,6 +172,7 @@ it.effect("lists issues across repositories, newest first, without pull requests
     expect(url.searchParams.get("per_page")).toBe("50");
     expect(url.searchParams.get("page")).toBe("2");
     expect(graphqlCalls).toEqual([]);
+    expect(calls).toHaveLength(1);
   }),
 );
 
@@ -185,6 +186,40 @@ const blockedPage = {
   page: 1,
   perPage: 50,
 } as const;
+
+it.effect("names a repository with Issues turned off when its first page lists none", () =>
+  Effect.gen(function* () {
+    const { calls, issues } = harness(({ path }) => {
+      if (path.startsWith("search/issues")) return ok({ total_count: 0, items: [] });
+      if (path === "repos/me/web") return ok({ has_issues: false });
+      if (path === "repos/acme/web") return ok({ has_issues: true });
+      return refused(404, "Not Found");
+    });
+    const service = yield* issues;
+    const list = (repositories: ReadonlyArray<string>, page = 1) =>
+      service.list({ ...blockedPage, repositories, page });
+
+    expect(yield* list(["me/web"])).toEqual({
+      issues: [],
+      hasMore: false,
+      issuesDisabled: ["me/web"],
+    });
+    expect(yield* list(["acme/web"])).toEqual({ issues: [], hasMore: false });
+    expect(yield* list(["me/gone"])).toEqual({ issues: [], hasMore: false });
+    expect(yield* list(["me/web"], 2)).toEqual({ issues: [], hasMore: false });
+    expect(yield* list(["me/web", "acme/web"])).toEqual({ issues: [], hasMore: false });
+    expect(calls.map(({ path }) => path.split("?")[0])).toEqual([
+      "search/issues",
+      "repos/me/web",
+      "search/issues",
+      "repos/acme/web",
+      "search/issues",
+      "repos/me/gone",
+      "search/issues",
+      "search/issues",
+    ]);
+  }),
+);
 
 it.effect("names the open blockers of each blocked issue on a page in one request", () =>
   Effect.gen(function* () {

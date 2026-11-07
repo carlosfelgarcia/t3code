@@ -1,5 +1,6 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   DEFAULT_SERVER_SETTINGS,
   type EnvironmentId,
@@ -7,9 +8,11 @@ import {
   type IssueListResult,
   type IssueListState,
   type IssueRef,
+  type IssueRepository,
   type IssueState,
   type IssueSummary,
   type PullRequestLabel,
+  type ScopedThreadRef,
 } from "@t3tools/contracts";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { AsyncResult } from "effect/reactivity";
@@ -27,7 +30,9 @@ import {
 } from "lucide-react";
 import { useContext, useEffect, useState } from "react";
 
+import type { DraftId } from "~/composerDraftStore";
 import { isElectron } from "~/env";
+import { useStableCallback } from "~/hooks/useStableCallback";
 import { registerCommands } from "~/shortcuts/dispatcher";
 import { cn } from "~/lib/utils";
 import { useAllEnvironmentShellsBootstrapped, useProjects } from "~/state/entities";
@@ -78,6 +83,7 @@ import {
   type IssueLabelEdit,
   issueKey,
   issueRepositories,
+  projectIssueRepositories,
   issueRepositoryKey,
   issueRowLabels,
   issueRowState,
@@ -112,14 +118,16 @@ type IssueLabelChanges = ReadonlyArray<{
 }>;
 
 /** `undefined` clears a key. */
-type IssuesSearchPatch = { readonly [Key in keyof IssuesSearch]?: IssuesSearch[Key] | undefined };
-
-const withQuery = (value: string) => (previous: IssuesSearch) => {
-  const q = value.trim().slice(0, 200);
-  return patchSearch(previous, { q: q.length === 0 ? undefined : q });
+export type IssuesSearchPatch = {
+  readonly [Key in keyof IssuesSearch]?: IssuesSearch[Key] | undefined;
 };
 
-function patchSearch(previous: IssuesSearch, patch: IssuesSearchPatch): IssuesSearch {
+const queryPatch = (value: string): IssuesSearchPatch => {
+  const q = value.trim().slice(0, 200);
+  return { q: q.length === 0 ? undefined : q };
+};
+
+export function patchSearch(previous: IssuesSearch, patch: IssuesSearchPatch): IssuesSearch {
   const next: Record<string, unknown> = { ...previous, ...patch };
   for (const key of Object.keys(patch))
     if (next[key] === undefined && key !== "q") delete next[key];
@@ -135,6 +143,35 @@ const STATE_OPTIONS = [
 export function IssuesPage() {
   const search = useSearch({ from: "/_chat/issues" });
   const navigate = useNavigate({ from: "/issues" });
+  return (
+    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
+      <IssuesView
+        search={search}
+        onSearchChange={(patch, options) =>
+          void navigate({
+            search: (previous) => patchSearch(previous, patch),
+            replace: options?.push !== true,
+          })
+        }
+      />
+    </SidebarInset>
+  );
+}
+
+export function IssuesView({
+  search,
+  onSearchChange: onSearchChangeProp,
+  thread,
+}: {
+  search: IssuesSearch;
+  onSearchChange: (patch: IssuesSearchPatch, options?: { readonly push: true }) => void;
+  /** Set in a thread's panel: lists that project's repositories, read with its environment. */
+  thread?: {
+    readonly project: EnvironmentProject;
+    readonly composerDraftTarget: ScopedThreadRef | DraftId;
+  };
+}) {
+  const onSearchChange = useStableCallback(onSearchChangeProp);
   const registry = useContext(RegistryContext);
   const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -147,15 +184,34 @@ export function IssuesPage() {
   );
   const capableIds = new Set(capableEnvironments.map((environment) => environment.environmentId));
   const environmentId =
-    [search.environmentId, primaryEnvironmentId, capableEnvironments[0]?.environmentId].find(
-      (id): id is EnvironmentId => id != null && capableIds.has(id),
-    ) ?? null;
-  const projects = allProjects.filter((project) => capableIds.has(project.environmentId));
-  const repositories = issueRepositories(projects);
+    (thread === undefined
+      ? [search.environmentId, primaryEnvironmentId, capableEnvironments[0]?.environmentId]
+      : [thread.project.environmentId]
+    ).find((id): id is EnvironmentId => id != null && capableIds.has(id)) ?? null;
+  const projects = (thread === undefined ? allProjects : [thread.project]).filter((project) =>
+    capableIds.has(project.environmentId),
+  );
+  const repositories =
+    thread === undefined ? issueRepositories(projects) : projectIssueRepositories(thread.project);
+  const threadRepository =
+    thread === undefined
+      ? undefined
+      : (repositories.find((repository) => issueRepositoryKey(repository) === search.repo) ??
+        repositories[0]);
   const scopedRepositories =
-    search.repo === undefined
-      ? repositories
-      : repositories.filter((repository) => issueRepositoryKey(repository) === search.repo);
+    thread !== undefined
+      ? threadRepository === undefined
+        ? []
+        : [threadRepository]
+      : search.repo === undefined
+        ? repositories
+        : repositories.filter((repository) => issueRepositoryKey(repository) === search.repo);
+  const otherRepository =
+    threadRepository === undefined
+      ? null
+      : (repositories.find(
+          (repository) => issueRepositoryKey(repository) !== issueRepositoryKey(threadRepository),
+        ) ?? null);
 
   const discovery = useEnvironmentQuery(
     environmentId === null
@@ -328,8 +384,7 @@ export function IssuesPage() {
     });
   };
 
-  const updateSearch = (patch: IssuesSearchPatch) =>
-    void navigate({ search: (previous) => patchSearch(previous, patch), replace: true });
+  const updateSearch = (patch: IssuesSearchPatch) => onSearchChange(patch);
 
   const refreshList = () => {
     if (environmentId === null) return;
@@ -383,31 +438,27 @@ export function IssuesPage() {
   const [pendingQuery, setPendingQuery] = useState<string | null>(null);
   const commitQuery = (value: string) => {
     setPendingQuery(null);
-    void navigate({ search: withQuery(value), replace: true });
+    onSearchChange(queryPatch(value));
   };
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounces typing into the URL; the timer must stop if the page unmounts.
   useEffect(() => {
     if (pendingQuery === null) return;
     const timer = setTimeout(() => {
       setPendingQuery(null);
-      void navigate({ search: withQuery(pendingQuery), replace: true });
+      onSearchChange(queryPatch(pendingQuery));
     }, SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [navigate, pendingQuery]);
+  }, [onSearchChange, pendingQuery]);
 
   const selected: IssueRef | null =
     search.host !== undefined && search.repository !== undefined && search.number !== undefined
       ? { host: search.host, repository: search.repository, number: search.number }
       : null;
   const select = (issue: IssueRef | null) =>
-    void navigate({
-      search: (previous) =>
-        patchSearch(previous, {
-          host: issue?.host,
-          repository: issue?.repository,
-          number: issue?.number,
-        }),
-    });
+    onSearchChange(
+      { host: issue?.host, repository: issue?.repository, number: issue?.number },
+      { push: true },
+    );
 
   const labelOptions = [
     ...new Set([
@@ -425,7 +476,9 @@ export function IssuesPage() {
     Icon: ServerIcon,
   }));
   const repositoryOptions = [
-    { value: "", label: "All repositories", Icon: FolderGit2Icon },
+    ...(thread === undefined
+      ? [{ value: "", label: "All repositories", Icon: FolderGit2Icon }]
+      : []),
     ...repositories.map((repository) => ({
       value: issueRepositoryKey(repository),
       label: repository.repository,
@@ -438,6 +491,14 @@ export function IssuesPage() {
       return <ListMessage>Connect to an environment to see issues.</ListMessage>;
     }
     if (repositories.length === 0) {
+      if (thread !== undefined) {
+        return (
+          <ListMessage>
+            Issues currently support GitHub only, and this project is not backed by a GitHub
+            repository.
+          </ListMessage>
+        );
+      }
       return projectsKnown ? (
         <ListMessage>
           Issues currently support GitHub only, and none of your projects is backed by a GitHub
@@ -480,6 +541,10 @@ export function IssuesPage() {
               onIssueMenu={openIssueMenu}
               onLoadMore={() => setLoaded({ key: listKey, pages: pageCount + 1 })}
               onRetry={() => void refreshFromGitHub()}
+              otherRepository={otherRepository}
+              onShowRepository={(repository) =>
+                updateSearch({ repo: issueRepositoryKey(repository) })
+              }
             />
           ),
         )}
@@ -487,17 +552,40 @@ export function IssuesPage() {
     );
   })();
 
+  const refreshButton = (
+    <Button
+      size="icon-sm"
+      variant="ghost"
+      aria-label="Refresh issues"
+      disabled={refreshing || environmentId === null}
+      onClick={() => void refreshFromGitHub()}
+    >
+      <RefreshIcon size="md" refreshing={refreshing} />
+    </Button>
+  );
+  const searchInput = (
+    <PullRequestSearchInput
+      value={search.q ?? ""}
+      placeholder="Search issue titles"
+      label="Search issues"
+      onChange={setPendingQuery}
+      onSubmit={commitQuery}
+    />
+  );
+
   return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
-      <div className="relative flex min-h-0 flex-1">
-        <div
-          className={cn(
-            "@container/pr-list min-h-0 min-w-0 flex-col overflow-x-hidden bg-background",
-            selected === null
-              ? "flex flex-1"
+    <div className="relative flex min-h-0 flex-1">
+      <div
+        className={cn(
+          "@container/pr-list min-h-0 min-w-0 flex-col overflow-x-hidden bg-background",
+          selected === null
+            ? "flex flex-1"
+            : thread !== undefined
+              ? "hidden"
               : "hidden border-r border-border/60 lg:flex lg:w-[28rem] lg:shrink-0",
-          )}
-        >
+        )}
+      >
+        {thread === undefined ? (
           <WorkspacePageHeader electron={isElectron} className="relative bg-background">
             <WorkspaceBreadcrumb ariaLabel="Issues breadcrumb">
               <WorkspaceBreadcrumbItem current>
@@ -505,148 +593,148 @@ export function IssuesPage() {
               </WorkspaceBreadcrumbItem>
             </WorkspaceBreadcrumb>
             <div className="min-w-0 flex-1" />
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Refresh issues"
-              disabled={refreshing || environmentId === null}
-              onClick={() => void refreshFromGitHub()}
-            >
-              <RefreshIcon size="md" refreshing={refreshing} />
-            </Button>
+            {refreshButton}
           </WorkspacePageHeader>
-          <div className="flex shrink-0 flex-col gap-2 px-4 pb-3">
-            <PullRequestSearchInput
-              value={search.q ?? ""}
-              placeholder="Search issue titles"
-              label="Search issues"
-              onChange={setPendingQuery}
-              onSubmit={commitQuery}
-            />
-            {/* The selection bar covers the filters rather than replacing them, so rows never shift. */}
-            <div className="relative">
-              <div
-                className={cn("flex flex-wrap items-center gap-2", selecting && "invisible")}
-                inert={selecting}
-              >
-                <Checkbox
-                  aria-label="Select all loaded issues"
-                  checked={false}
-                  disabled={loadedIssues.length === 0}
-                  onCheckedChange={selectAll}
-                />
+        ) : null}
+        <div
+          className={cn("flex shrink-0 flex-col gap-2 px-4 pb-3", thread !== undefined && "pt-3")}
+        >
+          {thread === undefined ? (
+            searchInput
+          ) : (
+            <div className="flex items-center gap-1">
+              <div className="min-w-0 flex-1">{searchInput}</div>
+              {refreshButton}
+            </div>
+          )}
+          {/* The selection bar covers the filters rather than replacing them, so rows never shift. */}
+          <div className="relative">
+            <div
+              className={cn("flex flex-wrap items-center gap-2", selecting && "invisible")}
+              inert={selecting}
+            >
+              <Checkbox
+                aria-label="Select all loaded issues"
+                checked={false}
+                disabled={loadedIssues.length === 0}
+                onCheckedChange={selectAll}
+              />
+              <PullRequestCompactFilterMenu
+                label="Filter by state"
+                outlined
+                value={search.state}
+                options={STATE_OPTIONS}
+                onChange={(state) => updateSearch({ state })}
+              />
+              {repositories.length > 1 ? (
                 <PullRequestCompactFilterMenu
-                  label="Filter by state"
+                  label="Filter by repository"
                   outlined
-                  value={search.state}
-                  options={STATE_OPTIONS}
-                  onChange={(state) => updateSearch({ state })}
+                  value={
+                    threadRepository === undefined
+                      ? (search.repo ?? "")
+                      : issueRepositoryKey(threadRepository)
+                  }
+                  options={repositoryOptions}
+                  onChange={(repo) => updateSearch({ repo: repo === "" ? undefined : repo })}
                 />
-                {repositories.length > 1 ? (
-                  <PullRequestCompactFilterMenu
-                    label="Filter by repository"
-                    outlined
-                    value={search.repo ?? ""}
-                    options={repositoryOptions}
-                    onChange={(repo) => updateSearch({ repo: repo === "" ? undefined : repo })}
-                  />
-                ) : null}
-                {authorOptions.length > 0 ? (
-                  <PullRequestCompactFilterMenu
-                    label="Filter by author"
-                    triggerIcon={<UserIcon aria-hidden className="size-4" />}
-                    triggerLabel={author === undefined ? "Author" : `Author · ${author}`}
-                    outlined
-                    value={author ?? ""}
-                    options={authorOptions}
-                    onChange={(next) =>
-                      updateSearch({ author: next === "" ? ISSUE_AUTHOR_ALL : next })
-                    }
-                  />
-                ) : null}
-                <IssueLabelFilter
-                  options={labelOptions}
-                  selected={search.labels ?? []}
-                  onChange={(labels) =>
-                    updateSearch({ labels: labels.length === 0 ? undefined : labels })
+              ) : null}
+              {authorOptions.length > 0 ? (
+                <PullRequestCompactFilterMenu
+                  label="Filter by author"
+                  triggerIcon={<UserIcon aria-hidden className="size-4" />}
+                  triggerLabel={author === undefined ? "Author" : `Author · ${author}`}
+                  outlined
+                  value={author ?? ""}
+                  options={authorOptions}
+                  onChange={(next) =>
+                    updateSearch({ author: next === "" ? ISSUE_AUTHOR_ALL : next })
                   }
                 />
-                {environmentOptions.length > 1 && environmentId !== null ? (
-                  <PullRequestCompactFilterMenu
-                    label="Read issues with"
-                    outlined
-                    value={environmentId as string}
-                    options={environmentOptions}
-                    onChange={(next) => updateSearch({ environmentId: next as EnvironmentId })}
-                  />
-                ) : null}
-              </div>
-              {selecting && environmentId !== null ? (
-                <div className="absolute inset-x-0 top-0 flex items-center gap-2">
-                  <Checkbox
-                    aria-label={allSelected ? "Clear the selection" : "Select all loaded issues"}
-                    checked={allSelected}
-                    indeterminate={!allSelected}
-                    onCheckedChange={() => (allSelected ? clearSelection() : selectAll())}
-                  />
-                  <span className="text-sm">{selectedIssues.length} selected</span>
-                  <IssueBulkLabelPicker
-                    environmentId={environmentId}
-                    selected={selectedIssues.map((issue) => ({
-                      ...issue,
-                      labels: issueRowLabels(issue, labelEdits.get(issueKey(issue))),
-                    }))}
-                    onApplied={(changes) => {
-                      if (changes.length === 0) return;
-                      setLabelEdits((current) => {
-                        const next = new Map(current);
-                        for (const { issue, labels } of changes) {
-                          next.set(issueKey(issue), { staleUpdatedAt: issue.updatedAt, labels });
-                        }
-                        return next;
-                      });
-                      refreshList();
-                    }}
-                  />
-                  <Button variant="ghost" onClick={clearSelection}>
-                    Clear
-                  </Button>
-                </div>
+              ) : null}
+              <IssueLabelFilter
+                options={labelOptions}
+                selected={search.labels ?? []}
+                onChange={(labels) =>
+                  updateSearch({ labels: labels.length === 0 ? undefined : labels })
+                }
+              />
+              {thread === undefined && environmentOptions.length > 1 && environmentId !== null ? (
+                <PullRequestCompactFilterMenu
+                  label="Read issues with"
+                  outlined
+                  value={environmentId as string}
+                  options={environmentOptions}
+                  onChange={(next) => updateSearch({ environmentId: next as EnvironmentId })}
+                />
               ) : null}
             </div>
-          </div>
-          <div
-            className="min-h-0 flex-1 overflow-y-auto px-2 pb-6 outline-none"
-            tabIndex={-1}
-            onKeyDown={(event) => {
-              if (event.key === "a" && (event.metaKey || event.ctrlKey) && !event.altKey) {
-                event.preventDefault();
-                selectAll();
-              }
-            }}
-          >
-            {listBody}
+            {selecting && environmentId !== null ? (
+              <div className="absolute inset-x-0 top-0 flex items-center gap-2">
+                <Checkbox
+                  aria-label={allSelected ? "Clear the selection" : "Select all loaded issues"}
+                  checked={allSelected}
+                  indeterminate={!allSelected}
+                  onCheckedChange={() => (allSelected ? clearSelection() : selectAll())}
+                />
+                <span className="text-sm">{selectedIssues.length} selected</span>
+                <IssueBulkLabelPicker
+                  environmentId={environmentId}
+                  selected={selectedIssues.map((issue) => ({
+                    ...issue,
+                    labels: issueRowLabels(issue, labelEdits.get(issueKey(issue))),
+                  }))}
+                  onApplied={(changes) => {
+                    if (changes.length === 0) return;
+                    setLabelEdits((current) => {
+                      const next = new Map(current);
+                      for (const { issue, labels } of changes) {
+                        next.set(issueKey(issue), { staleUpdatedAt: issue.updatedAt, labels });
+                      }
+                      return next;
+                    });
+                    refreshList();
+                  }}
+                />
+                <Button variant="ghost" onClick={clearSelection}>
+                  Clear
+                </Button>
+              </div>
+            ) : null}
           </div>
         </div>
-        {selected !== null && environmentId !== null ? (
-          <IssueDetailPanel
-            key={issueKey(selected)}
-            environmentId={environmentId}
-            reference={selected}
-            projects={projects}
-            onBack={() => select(null)}
-            onOpenIssue={select}
-            onLabelsChanged={(issue, edit) => {
-              setLabelEdits((current) => new Map(current).set(issueKey(issue), edit));
-              refreshList();
-            }}
-            stateEdit={stateEdits.get(issueKey(selected))}
-            changingState={changingState.has(issueKey(selected))}
-            onChangeState={(issue, state) => void changeIssueState(issue, state)}
-          />
-        ) : null}
+        <div
+          className="min-h-0 flex-1 overflow-y-auto px-2 pb-6 outline-none"
+          tabIndex={-1}
+          onKeyDown={(event) => {
+            if (event.key === "a" && (event.metaKey || event.ctrlKey) && !event.altKey) {
+              event.preventDefault();
+              selectAll();
+            }
+          }}
+        >
+          {listBody}
+        </div>
       </div>
-    </SidebarInset>
+      {selected !== null && environmentId !== null ? (
+        <IssueDetailPanel
+          key={issueKey(selected)}
+          environmentId={environmentId}
+          reference={selected}
+          projects={projects}
+          onBack={() => select(null)}
+          onOpenIssue={select}
+          onLabelsChanged={(issue, edit) => {
+            setLabelEdits((current) => new Map(current).set(issueKey(issue), edit));
+            refreshList();
+          }}
+          stateEdit={stateEdits.get(issueKey(selected))}
+          changingState={changingState.has(issueKey(selected))}
+          onChangeState={(issue, state) => void changeIssueState(issue, state)}
+          composerDraftTarget={thread?.composerDraftTarget}
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -672,6 +760,8 @@ function IssueListPage({
   onIssueMenu,
   onLoadMore,
   onRetry,
+  otherRepository,
+  onShowRepository,
 }: {
   environmentId: EnvironmentId;
   input: IssueListInput;
@@ -686,6 +776,9 @@ function IssueListPage({
   onIssueMenu: (issue: IssueSummary, position: MenuPosition) => void;
   onLoadMore: () => void;
   onRetry: () => void;
+  /** The thread project's other repository, offered when this one has Issues turned off. */
+  otherRepository: IssueRepository | null;
+  onShowRepository: (repository: IssueRepository) => void;
 }) {
   const query = useEnvironmentQuery(issueEnvironment.list({ environmentId, input }));
   const result: IssueListResult | null = query.data;
@@ -719,7 +812,27 @@ function IssueListPage({
             </p>
           ))
         : null}
-      {input.page === 1 && result.issues.length === 0 ? (
+      {input.page === 1
+        ? (result.disabledRepositories ?? []).map((repository) => (
+            <ListMessage key={issueRepositoryKey(repository)}>
+              <span className="min-w-0 flex-1">
+                Issues are turned off for {repository.repository}.
+              </span>
+              {otherRepository === null ? null : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onShowRepository(otherRepository)}
+                >
+                  Show {otherRepository.repository} issues
+                </Button>
+              )}
+            </ListMessage>
+          ))
+        : null}
+      {input.page === 1 &&
+      result.issues.length === 0 &&
+      (result.disabledRepositories ?? []).length === 0 ? (
         <ListMessage>No issues match these filters.</ListMessage>
       ) : null}
       {result.issues.map((issue) => (
