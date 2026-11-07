@@ -249,6 +249,64 @@ it.effect("names the open blockers of each blocked issue on a page in one reques
   }),
 );
 
+it.effect(
+  "lists why each closed issue was closed, as completed where GitHub records no reason",
+  () =>
+    Effect.gen(function* () {
+      const closed = (number: number, state_reason: string | null) => ({
+        ...rawIssue,
+        number,
+        state: "closed",
+        state_reason,
+      });
+      const { issues } = harness(() =>
+        ok({
+          total_count: 5,
+          items: [
+            { ...rawIssue, state_reason: "reopened" },
+            closed(20, "completed"),
+            closed(21, "not_planned"),
+            closed(22, "duplicate"),
+            closed(23, null),
+          ],
+        }),
+      );
+      const result = yield* (yield* issues).list(blockedPage);
+
+      expect(
+        result.issues.map(({ number, state, closeReason }) => [number, state, closeReason]),
+      ).toEqual([
+        [12, "open", undefined],
+        [20, "closed", "completed"],
+        [21, "closed", "not-planned"],
+        [22, "closed", "duplicate"],
+        [23, "closed", "completed"],
+      ]);
+    }),
+);
+
+it.effect("lists a parent issue's sub-issue progress, and none for issues without sub-issues", () =>
+  Effect.gen(function* () {
+    const { issues } = harness(() =>
+      ok({
+        total_count: 3,
+        items: [
+          { ...rawIssue, sub_issues_summary: { total: 7, completed: 3, percent_completed: 42 } },
+          { ...rawIssue, number: 13, sub_issues_summary: { total: 0, completed: 0 } },
+          { ...rawIssue, number: 14 },
+        ],
+      }),
+    );
+    const result = yield* (yield* issues).list(blockedPage);
+
+    expect(result.issues).toEqual([
+      { ...summary, subIssueProgress: { completed: 3, total: 7 } },
+      { ...summary, number: 13 },
+      { ...summary, number: 14 },
+    ]);
+  }),
+);
+
 it.effect("still lists blocked issues by count when their blockers cannot be read", () =>
   Effect.gen(function* () {
     const { issues } = harness(() =>
@@ -378,6 +436,7 @@ it.effect("reads an issue with its assignees and comments in order", () =>
           number: 3,
           title: "Issue 3",
           state: "closed",
+          closeReason: "completed",
         },
       ],
       blocking: [
@@ -417,24 +476,79 @@ it.effect("reads an issue with its assignees and comments in order", () =>
   }),
 );
 
-it.effect("reads an issue without its dependencies when GitHub cannot list them", () =>
+it.effect("reads an issue's sub-issues in their parent's order, and its own parent issue", () =>
   Effect.gen(function* () {
-    const { issues } = harness(({ path }) =>
-      path.includes("/dependencies/")
-        ? refused(404, "Not Found")
-        : path.includes("/comments")
-          ? ok([])
-          : ok(rawIssue),
+    const linked = (number: number, state: string, state_reason: string | null = null) => ({
+      ...rawIssue,
+      number,
+      title: `Issue ${number}`,
+      state,
+      state_reason,
+    });
+    const { calls, issues } = harness(({ path }) =>
+      path.includes("/sub_issues")
+        ? ok([linked(30, "closed", "not_planned"), linked(31, "open"), linked(29, "closed")])
+        : path.endsWith("/parent")
+          ? ok({ ...linked(1, "open"), repository_url: "https://api.github.com/repos/acme/api" })
+          : path.includes("/comments")
+            ? ok([])
+            : path.includes("/dependencies/")
+              ? ok([])
+              : ok({
+                  ...rawIssue,
+                  sub_issues_summary: { total: 3, completed: 2 },
+                  parent_issue_url: "https://api.github.com/repos/acme/api/issues/1",
+                }),
     );
     const detail = yield* (yield* issues).detail(ref);
 
-    expect(detail).toEqual({
-      ...summary,
-      body: "It crashes.",
-      assignees: [summary.author],
-      comments: [],
+    const issue = (number: number) => ({
+      host: "github.com",
+      repository: "acme/web",
+      number,
+      title: `Issue ${number}`,
     });
+    expect(detail.subIssueProgress).toEqual({ completed: 2, total: 3 });
+    expect(detail.subIssues).toEqual([
+      { ...issue(30), state: "closed", closeReason: "not-planned" },
+      { ...issue(31), state: "open" },
+      { ...issue(29), state: "closed", closeReason: "completed" },
+    ]);
+    expect(detail.parentIssue).toEqual({ ...issue(1), repository: "acme/api", state: "open" });
+    expect(calls.map(({ path }) => path)).toEqual(
+      expect.arrayContaining([
+        "repos/acme/web/issues/12/sub_issues?per_page=100",
+        "repos/acme/web/issues/12/parent",
+      ]),
+    );
   }),
+);
+
+it.effect(
+  "reads an issue without its dependencies, sub-issues or parent when GitHub cannot list them",
+  () =>
+    Effect.gen(function* () {
+      const { issues } = harness(({ path }) =>
+        path.includes("/dependencies/") || path.includes("/sub_issues") || path.endsWith("/parent")
+          ? refused(404, "Not Found")
+          : path.includes("/comments")
+            ? ok([])
+            : ok({
+                ...rawIssue,
+                sub_issues_summary: { total: 2, completed: 0 },
+                parent_issue_url: "https://api.github.com/repos/acme/web/issues/1",
+              }),
+      );
+      const detail = yield* (yield* issues).detail(ref);
+
+      expect(detail).toEqual({
+        ...summary,
+        subIssueProgress: { completed: 0, total: 2 },
+        body: "It crashes.",
+        assignees: [summary.author],
+        comments: [],
+      });
+    }),
 );
 
 it.effect("does not read a pull request as an issue", () =>

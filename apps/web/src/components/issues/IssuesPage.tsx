@@ -20,6 +20,7 @@ import {
   CircleDotIcon,
   FolderGit2Icon,
   LayersIcon,
+  ListChecksIcon,
   ServerIcon,
   TagIcon,
   UserIcon,
@@ -80,6 +81,7 @@ import {
   issueRepositoryKey,
   issueRowLabels,
   issueRowState,
+  type IssueStateShown,
   type IssueStateEdit,
   projectsForRepository,
 } from "./issues.logic";
@@ -285,7 +287,7 @@ export function IssuesPage() {
       environments.find((environment) => environment.environmentId === environmentId)?.label ??
       environmentId;
     const nextState =
-      issueRowState(issue, stateEdits.get(issueKey(issue))) === "open" ? "closed" : "open";
+      issueRowState(issue, stateEdits.get(issueKey(issue))).state === "open" ? "closed" : "open";
     void showPullRequestLinkContextMenu({
       url: issue.url,
       openLabel: "Open on GitHub",
@@ -360,6 +362,12 @@ export function IssuesPage() {
       new Map(current).set(key, { staleUpdatedAt: issue.updatedAt, state }),
     );
     refreshList();
+    // Changed from the list, the issue's own detail may never have been read to name its parent.
+    if (selected !== null) {
+      const open = issueEnvironment.detail({ environmentId, input: selected });
+      const openSubIssues = AsyncResult.getOrElse(registry.get(open), () => null)?.subIssues;
+      if (openSubIssues?.some((subIssue) => issueKey(subIssue) === key)) registry.refresh(open);
+    }
   };
   const refreshFromGitHub = async () => {
     if (environmentId === null) return;
@@ -752,7 +760,7 @@ function IssueRow({
 }: {
   issue: IssueSummary;
   labels: IssueSummary["labels"];
-  state: IssueState;
+  state: IssueStateShown;
   current: boolean;
   checked: boolean;
   selecting: boolean;
@@ -803,6 +811,7 @@ function IssueRow({
             <span className="@container/pr-row-meta flex min-w-0 flex-1 items-center gap-1.5">
               <PullRequestRowLabels labels={labels} />
               <IssueBlockedMarker issue={issue} />
+              <IssueSubIssueProgress issue={issue} />
               <PullRequestRowAuthor actor={issue.author} />
               <span className="truncate">{issue.repository}</span>
             </span>
@@ -965,6 +974,25 @@ function IssueBlockedMarker({ issue }: { issue: IssueSummary }) {
         {marker.tooltip.map((line) => (
           <div key={line}>{line}</div>
         ))}
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
+function IssueSubIssueProgress({ issue }: { issue: IssueSummary }) {
+  const progress = issue.subIssueProgress;
+  if (progress === undefined) return null;
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="inline-flex shrink-0 items-center gap-1" />}>
+        <ListChecksIcon aria-hidden className="size-3 shrink-0" />
+        <span className="tabular-nums">
+          {progress.completed}/{progress.total}
+        </span>
+      </TooltipTrigger>
+      <TooltipPopup>
+        {progress.completed} of {progress.total} {progress.total === 1 ? "sub-issue" : "sub-issues"}{" "}
+        completed
       </TooltipPopup>
     </Tooltip>
   );

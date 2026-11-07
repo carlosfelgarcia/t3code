@@ -99,16 +99,25 @@ describe("issueRowState", () => {
   const issue = { updatedAt: "2026-10-03T10:00:00Z", state: "open" } as const;
   const edit = { staleUpdatedAt: "2026-10-03T10:00:00Z", state: "closed" } as const;
 
-  it("shows a just-made state change while the list still holds the read from before it", () => {
-    expect(issueRowState(issue, edit)).toBe("closed");
+  it("shows a just-made close as completed while the list still holds the read from before it", () => {
+    expect(issueRowState(issue, edit)).toEqual({ state: "closed", closeReason: "completed" });
+    expect(issueRowState({ ...issue, state: "closed", closeReason: "not-planned" }, edit)).toEqual({
+      state: "closed",
+      closeReason: "completed",
+    });
   });
 
   it("trusts the list again once it carries a newer read of the issue", () => {
-    expect(issueRowState({ ...issue, updatedAt: "2026-10-03T10:00:05Z" }, edit)).toBe("open");
+    expect(
+      issueRowState(
+        { updatedAt: "2026-10-03T10:00:05Z", state: "closed", closeReason: "duplicate" },
+        { ...edit, state: "open" },
+      ),
+    ).toEqual({ state: "closed", closeReason: "duplicate" });
   });
 
   it("keeps the listed state when the issue has not been changed here", () => {
-    expect(issueRowState(issue, undefined)).toBe("open");
+    expect(issueRowState(issue, undefined)).toEqual({ state: "open" });
   });
 });
 

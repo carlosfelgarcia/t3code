@@ -52,6 +52,9 @@ Terms whose meaning matters across T3 Code. Architecture and lifecycle constrain
 | Pull request sync    | The worker that refreshes each distinct linked review once per cadence and discovers native stack layers. Explicit refreshes and failed stack reads trigger another read.                                                                                         |
 | Current pull request | The link used by single-review controls and older clients. Open work takes precedence; a completed single chain points at its top layer. Unrelated terminal links use the latest update.                                                                          |
 | Issue                | A tracked work item on a project's repository host, identified by host, repository, and number. Not a pull request, even where the host numbers both in one sequence. GitHub's "issue comment" on a pull request is a pull request comment, not an issue comment. |
+| Close reason         | Why a closed issue was closed: completed, not planned, or duplicate. A closed issue with no recorded reason reads as completed.                                                                                                                                   |
+| Sub-issue            | An issue the host records as part of another issue, its parent issue. Only the host's own relationship counts; a task list or "Part of #n" in a body does not make one. Not called a child issue.                                                                 |
+| Parent issue         | The issue a sub-issue belongs to. An issue has at most one parent issue and may itself be a sub-issue.                                                                                                                                                            |
 
 ## Composer context
 

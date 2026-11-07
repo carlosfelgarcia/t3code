@@ -137,12 +137,22 @@ export interface IssueStateEdit {
   readonly state: IssueState;
 }
 
+export type IssueStateShown = Pick<IssueSummary, "state" | "closeReason">;
+
 /** An issue's state, preferring a just-made change until the read catches up with it. */
 export function issueRowState(
-  issue: Pick<IssueSummary, "state" | "updatedAt">,
+  issue: IssueStateShown & Pick<IssueSummary, "updatedAt">,
   edit: IssueStateEdit | undefined,
-): IssueState {
-  return edit !== undefined && issue.updatedAt <= edit.staleUpdatedAt ? edit.state : issue.state;
+): IssueStateShown {
+  if (edit !== undefined && issue.updatedAt <= edit.staleUpdatedAt) {
+    // Close issue closes as completed, GitHub's default reason.
+    return edit.state === "closed"
+      ? { state: "closed", closeReason: "completed" }
+      : { state: "open" };
+  }
+  return issue.closeReason === undefined
+    ? { state: issue.state }
+    : { state: issue.state, closeReason: issue.closeReason };
 }
 
 type IssueWithLabels = IssueRef & { readonly labels: ReadonlyArray<PullRequestLabel> };

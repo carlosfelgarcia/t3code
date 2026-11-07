@@ -1,4 +1,5 @@
 import {
+  type IssueCloseReason,
   type IssueErrorReason,
   IssueOperationError,
   type IssueRef,
@@ -40,6 +41,7 @@ const RawIssue = Schema.Struct({
   number: Schema.Number,
   title: Schema.String,
   state: Schema.String,
+  state_reason: Schema.optional(Schema.NullOr(Schema.String)),
   html_url: Schema.String,
   repository_url: Schema.String,
   user: Schema.NullOr(RawUser),
@@ -51,6 +53,12 @@ const RawIssue = Schema.Struct({
   pull_request: Schema.optional(Schema.Unknown),
   /** Missing on GitHub Enterprise Server versions without issue dependencies. */
   issue_dependencies_summary: Schema.optional(Schema.Struct({ blocked_by: Schema.Number })),
+  /** Missing on GitHub Enterprise Server versions without sub-issues. */
+  sub_issues_summary: Schema.optional(
+    Schema.Struct({ total: Schema.Number, completed: Schema.Number }),
+  ),
+  /** The API URL of the issue's parent issue. */
+  parent_issue_url: Schema.optional(Schema.NullOr(Schema.String)),
 });
 type RawIssue = typeof RawIssue.Type;
 
@@ -75,6 +83,7 @@ const decodeIssue = decodeJsonResult(
   }),
 );
 const decodeComments = decodeJsonResult(Schema.Array(RawComment));
+const decodeLinkedIssue = decodeJsonResult(RawIssue);
 const decodeLinkedIssues = decodeJsonResult(Schema.Array(RawIssue));
 const decodeLabels = decodeJsonResult(Schema.Array(RawRepositoryLabel));
 
@@ -94,12 +103,28 @@ const toActor = (user: typeof RawUser.Type | null): PullRequestActor | null =>
 
 const repositoryOf = (raw: RawIssue) => raw.repository_url.split("/").slice(-2).join("/");
 
+const closeReasonOf = (reason: string | null | undefined): IssueCloseReason =>
+  reason === "not_planned" ? "not-planned" : reason === "duplicate" ? "duplicate" : "completed";
+
+const stateOf = (raw: Pick<RawIssue, "state" | "state_reason">) =>
+  raw.state === "closed"
+    ? { state: "closed" as const, closeReason: closeReasonOf(raw.state_reason) }
+    : { state: "open" as const };
+
+const toLinkedIssue = (host: string, raw: RawIssue): LinkedIssue => ({
+  host,
+  repository: repositoryOf(raw),
+  number: raw.number,
+  title: raw.title,
+  ...stateOf(raw),
+});
+
 const toSummary = (host: string, raw: RawIssue): IssueSummary => ({
   host,
   repository: repositoryOf(raw),
   number: raw.number,
   title: raw.title,
-  state: raw.state === "closed" ? "closed" : "open",
+  ...stateOf(raw),
   url: raw.html_url,
   author: toActor(raw.user),
   labels: raw.labels
@@ -111,6 +136,14 @@ const toSummary = (host: string, raw: RawIssue): IssueSummary => ({
   ...(raw.issue_dependencies_summary === undefined
     ? {}
     : { openBlockerCount: raw.issue_dependencies_summary.blocked_by }),
+  ...(raw.sub_issues_summary === undefined || raw.sub_issues_summary.total === 0
+    ? {}
+    : {
+        subIssueProgress: {
+          completed: raw.sub_issues_summary.completed,
+          total: raw.sub_issues_summary.total,
+        },
+      }),
 });
 
 const IssueGraphQLGroup = IssueDependenciesGraphQLGroup.middleware(
@@ -373,17 +406,28 @@ export const make = Effect.gen(function* () {
     ).pipe(
       Effect.map(({ value }) =>
         value
-          .map((raw): LinkedIssue => ({
-            host: ref.host,
-            repository: repositoryOf(raw),
-            number: raw.number,
-            title: raw.title,
-            state: raw.state === "closed" ? "closed" : "open",
-          }))
+          .map((raw) => toLinkedIssue(ref.host, raw))
           .toSorted(
             (left, right) => Number(left.state === "closed") - Number(right.state === "closed"),
           ),
       ),
+      Effect.option,
+    );
+
+  const subIssues = (ref: IssueRef) =>
+    read(
+      ref,
+      "listSubIssues",
+      `${issuePath(ref)}/sub_issues?per_page=100`,
+      decodeLinkedIssues,
+    ).pipe(
+      Effect.map(({ value }) => value.map((raw) => toLinkedIssue(ref.host, raw))),
+      Effect.option,
+    );
+
+  const parentIssue = (ref: IssueRef) =>
+    read(ref, "readParentIssue", `${issuePath(ref)}/parent`, decodeLinkedIssue).pipe(
+      Effect.map(({ value }) => toLinkedIssue(ref.host, value)),
       Effect.option,
     );
 
@@ -405,11 +449,20 @@ export const make = Effect.gen(function* () {
         detail: `#${ref.number} in ${ref.repository} is a pull request, not an issue.`,
       });
     }
+    const summary = toSummary(ref.host, raw);
+    const [issueComments, subIssueList, parent] = yield* Effect.all(
+      [
+        comments(ref),
+        summary.subIssueProgress === undefined ? Effect.succeedNone : subIssues(ref),
+        raw.parent_issue_url == null ? Effect.succeedNone : parentIssue(ref),
+      ],
+      { concurrency: "unbounded" },
+    );
     return {
-      ...toSummary(ref.host, raw),
+      ...summary,
       body: raw.body ?? "",
       assignees: (raw.assignees ?? []).flatMap((user) => toActor(user) ?? []),
-      comments: (yield* comments(ref)).map((comment) => ({
+      comments: issueComments.map((comment) => ({
         id: String(comment.id),
         author: toActor(comment.user),
         body: comment.body ?? "",
@@ -418,6 +471,8 @@ export const make = Effect.gen(function* () {
       })),
       ...(Option.isSome(blockedBy) ? { blockedBy: blockedBy.value } : {}),
       ...(Option.isSome(blocking) ? { blocking: blocking.value } : {}),
+      ...(Option.isSome(subIssueList) ? { subIssues: subIssueList.value } : {}),
+      ...(Option.isSome(parent) ? { parentIssue: parent.value } : {}),
     };
   });
 

@@ -42,12 +42,13 @@ import { LabelCandidateRow, labelCandidateMatches } from "../pullRequest/PullReq
 import { PullRequestMarkdown } from "../pullRequest/PullRequestMarkdown";
 import { PullRequestRowAuthor } from "../pullRequest/PullRequestListRow";
 import { PullRequestLabelChip } from "../pullRequest/pullRequestPresentation";
-import { IssueStateGlyph } from "./IssueStateGlyph";
+import { IssueStateGlyph, issueStatePresentation } from "./IssueStateGlyph";
 import {
   type IssueLabelEdit,
   issueReference,
   issueRowState,
   type IssueStateEdit,
+  type IssueStateShown,
   issueThreadPrompt,
   projectsForRepository,
 } from "./issues.logic";
@@ -157,6 +158,23 @@ export function IssueDetailPanel({
                 )}
               </dd>
               <LinkedIssues
+                title="Parent issue"
+                from={detail}
+                issues={detail.parentIssue === undefined ? undefined : [detail.parentIssue]}
+                onOpen={onOpenIssue}
+              />
+              <LinkedIssues
+                title="Sub-issues"
+                count={
+                  detail.subIssueProgress === undefined
+                    ? undefined
+                    : `${detail.subIssueProgress.completed} of ${detail.subIssueProgress.total}`
+                }
+                from={detail}
+                issues={detail.subIssues}
+                onOpen={onOpenIssue}
+              />
+              <LinkedIssues
                 title="Blocked by"
                 from={detail}
                 issues={detail.blockedBy}
@@ -223,17 +241,17 @@ function IssueStateControl({
   onChange,
 }: {
   environmentId: EnvironmentId;
-  state: IssueState;
+  state: IssueStateShown;
   changing: boolean;
   onChange: (state: IssueState) => void;
 }) {
   const canChange = useAtomValue(issueEnvironment.setState.permissionAtom(environmentId));
-  const open = state === "open";
+  const open = state.state === "open";
   return (
     <>
       <span className="inline-flex items-center gap-1.5">
         <IssueStateGlyph state={state} />
-        {open ? "Open" : "Closed"}
+        {issueStatePresentation(state).label}
       </span>
       {canChange ? (
         <Button
@@ -252,11 +270,13 @@ function IssueStateControl({
 
 function LinkedIssues({
   title,
+  count,
   from,
   issues,
   onOpen,
 }: {
   title: string;
+  count?: string | undefined;
   from: IssueRef;
   issues: ReadonlyArray<LinkedIssue> | undefined;
   onOpen: (issue: IssueRef) => void;
@@ -264,7 +284,10 @@ function LinkedIssues({
   if (issues === undefined || issues.length === 0) return null;
   return (
     <>
-      <dt className="pt-0.5 text-muted-foreground">{title}</dt>
+      <dt className="flex flex-col pt-0.5 text-muted-foreground">
+        {title}
+        {count === undefined ? null : <span className="tabular-nums">{count}</span>}
+      </dt>
       <dd className="flex min-w-0 flex-col gap-1">
         {issues.map((issue) => (
           <button
@@ -275,7 +298,7 @@ function LinkedIssues({
               onOpen({ host: issue.host, repository: issue.repository, number: issue.number })
             }
           >
-            <IssueStateGlyph state={issue.state} className="size-3.5" />
+            <IssueStateGlyph state={issue} className="size-3.5" />
             <span className="shrink-0 text-muted-foreground">{issueReference(from, issue)}</span>
             <span className={cn("truncate", issue.state === "closed" && "text-muted-foreground")}>
               {issue.title}

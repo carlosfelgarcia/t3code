@@ -1,6 +1,6 @@
 import { WS_METHODS } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
-import type { Atom } from "effect/reactivity";
+import { AsyncResult, type Atom } from "effect/reactivity";
 
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 import { createEnvironmentRpcCommand, createEnvironmentRpcQueryAtomFamily } from "./runtime.ts";
@@ -41,7 +41,21 @@ export function createIssueEnvironmentAtoms<R, E>(
       tag: WS_METHODS.issuesSetState,
       onSuccess: ({ environmentId, input: { host, repository, number } }, registry) =>
         Effect.sync(() => {
-          registry.refresh(detail({ environmentId, input: { host, repository, number } }));
+          const issue = detail({ environmentId, input: { host, repository, number } });
+          // The parent lists this issue's state and counts it in its progress. Only a detail
+          // already read is checked: reading one nobody has open would fetch it.
+          const parent = registry.getNodes().has(issue)
+            ? AsyncResult.getOrElse(registry.get(issue), () => null)?.parentIssue
+            : undefined;
+          registry.refresh(issue);
+          if (parent !== undefined) {
+            registry.refresh(
+              detail({
+                environmentId,
+                input: { host: parent.host, repository: parent.repository, number: parent.number },
+              }),
+            );
+          }
         }),
     }),
     /** Drops the server's shared reads, so only a person's refresh spends GitHub requests. */

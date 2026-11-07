@@ -309,6 +309,11 @@ mark for their titles. An opened issue lists what it is blocked by and what it i
 closed ones, and selecting one opens it. Blockers are set on GitHub. GitHub Enterprise Server
 versions without issue dependencies show neither.
 
+An opened issue lists its sub-issues in their order on GitHub, and a sub-issue links to its
+parent issue; the list shows how many of an issue's sub-issues are completed. Sub-issues are set on
+GitHub. **Close issue** closes an issue as completed; to close one as not planned or as a
+duplicate, use GitHub.
+
 ## Git Tree
 
 **Git Tree**, at the bottom of the sidebar, in the command palette, or as **Open Git Tree** when you

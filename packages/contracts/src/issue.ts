@@ -6,6 +6,9 @@ import { PullRequestActor, PullRequestLabel } from "./pullRequest.ts";
 export const IssueState = Schema.Literals(["open", "closed"]);
 export type IssueState = typeof IssueState.Type;
 
+export const IssueCloseReason = Schema.Literals(["completed", "not-planned", "duplicate"]);
+export type IssueCloseReason = typeof IssueCloseReason.Type;
+
 export const IssueListState = Schema.Literals(["open", "closed", "all"]);
 export type IssueListState = typeof IssueListState.Type;
 
@@ -40,11 +43,15 @@ export const IssueListInput = Schema.Struct({
 });
 export type IssueListInput = typeof IssueListInput.Type;
 
-/** Another issue an issue depends on, or that depends on it. */
+/** Missing on open issues, and from servers older than close reasons; a closed one reads as completed. */
+const closeReason = Schema.optional(IssueCloseReason);
+
+/** Another issue an issue depends on, or that depends on it, or its parent or sub-issue. */
 export const LinkedIssue = Schema.Struct({
   ...IssueRef.fields,
   title: Schema.String,
   state: IssueState,
+  closeReason,
 });
 export type LinkedIssue = typeof LinkedIssue.Type;
 
@@ -52,6 +59,7 @@ export const IssueSummary = Schema.Struct({
   ...IssueRef.fields,
   title: Schema.String,
   state: IssueState,
+  closeReason,
   url: Schema.String,
   author: Schema.NullOr(PullRequestActor),
   labels: Schema.Array(PullRequestLabel),
@@ -62,6 +70,10 @@ export const IssueSummary = Schema.Struct({
   openBlockerCount: Schema.optional(NonNegativeInt),
   /** Missing when the blockers could not be read; the count still marks the issue blocked. */
   openBlockers: Schema.optional(Schema.Array(LinkedIssue)),
+  /** Missing when the issue has no sub-issues or the host does not report them. */
+  subIssueProgress: Schema.optional(
+    Schema.Struct({ completed: NonNegativeInt, total: PositiveInt }),
+  ),
 });
 export type IssueSummary = typeof IssueSummary.Type;
 
@@ -98,6 +110,9 @@ export const IssueDetail = Schema.Struct({
   /** Missing when the host does not offer issue dependencies or they could not be read. */
   blockedBy: Schema.optional(Schema.Array(LinkedIssue)),
   blocking: Schema.optional(Schema.Array(LinkedIssue)),
+  /** In the parent's own order. Missing when there are none or they could not be read. */
+  subIssues: Schema.optional(Schema.Array(LinkedIssue)),
+  parentIssue: Schema.optional(LinkedIssue),
 });
 export type IssueDetail = typeof IssueDetail.Type;
 
