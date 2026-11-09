@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import { OrchestrationV2ProviderTurnTokenUsage } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import { formatContextWindowCompactionMessage } from "../components/chat/ContextWindowMeter.logic";
+import { formatContextWindowCompactionMessage } from "../components/chat/compaction.logic";
 import * as DateTime from "effect/DateTime";
 import {
   ContextTransferId,
@@ -11,6 +11,7 @@ import {
   ThreadId,
 } from "@t3tools/contracts";
 import { makeThreadProjectionFixture } from "../test-fixtures";
+import { contextBudget } from "./contextWindow";
 import {
   deriveLatestContextWindowSnapshot,
   latestProviderTurnTokenUsage,
@@ -67,9 +68,9 @@ describe("live provider-turn usage (#8144)", () => {
     expect(snapshot?.remainingTokens).toBe(158_000);
     expect(snapshot?.usedPercentage).toBe(21);
     expect(snapshot?.autoCompactThreshold).toBe(150_000);
-    expect(
-      formatContextWindowCompactionMessage("Claude Sonnet 4.6", snapshot?.autoCompactThreshold),
-    ).toBe("Compacts automatically at about 150,000 tokens.");
+    expect(formatContextWindowCompactionMessage(snapshot?.autoCompactThreshold)).toBe(
+      "Compacts automatically at about 150,000 tokens.",
+    );
   });
 });
 
@@ -205,5 +206,40 @@ describe("latestProviderTurnTokenUsage", () => {
     ]) {
       expect(latestProviderTurnTokenUsage([], { ...projection, contextTransfers })).toBeNull();
     }
+  });
+});
+
+describe("contextBudget", () => {
+  it("measures usage against 200k, capped at the model's window, which it reports only when it differs", () => {
+    expect(contextBudget({ usedTokens: 100_000, maxTokens: 1_000_000 })).toMatchObject({
+      budgetTokens: 200_000,
+      usedPercentage: 50,
+      modelWindowTokens: 1_000_000,
+    });
+    expect(contextBudget({ usedTokens: 64_000, maxTokens: 128_000 })).toMatchObject({
+      budgetTokens: 128_000,
+      usedPercentage: 50,
+      modelWindowTokens: null,
+    });
+    expect(contextBudget({ usedTokens: 30_000, maxTokens: null })).toMatchObject({
+      budgetTokens: 200_000,
+      usedPercentage: 15,
+      modelWindowTokens: null,
+    });
+    expect(contextBudget({ usedTokens: 30_000, maxTokens: 0 })).toMatchObject({
+      budgetTokens: 200_000,
+      modelWindowTokens: null,
+    });
+    expect(contextBudget({ usedTokens: 250_000, maxTokens: 1_000_000 })).toMatchObject({
+      usedPercentage: 100,
+    });
+  });
+
+  it("turns warning at 50% of the budget and error at 80%", () => {
+    const tone = (usedTokens: number) => contextBudget({ usedTokens, maxTokens: null }).tone;
+    expect(tone(99_999)).toBe("success");
+    expect(tone(100_000)).toBe("warning");
+    expect(tone(159_999)).toBe("warning");
+    expect(tone(160_000)).toBe("error");
   });
 });
