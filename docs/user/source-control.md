@@ -357,16 +357,24 @@ behind their upstream, and mark an upstream that was deleted on the remote as **
 run **Fetch & prune**. The graph covers local branches, their upstreams and the default branch,
 200 commits at a time.
 
+Merge and squash commits show the number of the pull request they landed, read from the default
+merge message of GitHub, GitLab, Bitbucket, Azure DevOps and Forgejo. A commit whose message was
+rewritten shows none.
+
 **Pull** only fast-forwards the current branch. **Push** sets the upstream the first time and
 never force-pushes; if the remote has commits you don't, pull first. Deleting a branch with
 unmerged commits asks before force deleting it, and the current branch or one checked out in a
 worktree can't be deleted.
 
 **Clean Repo** starts a thread titled "Clean repo" in the project's folder with the project's
-default model, and sends it at once. Its agent brings `main` or `master` up to date, removes local
+default model, and sends it at once. By default its agent brings `main` or `master` up to date, removes local
 branches and prunes remotes. It keeps branches that are unmerged or checked out in a worktree and
 lists them, and if the folder has uncommitted changes it stops and tells you rather than stashing
 or committing them.
+
+To change what Clean Repo asks its agent to do, edit **Clean Repo prompt** under
+**Settings → Source Control → Repositories**, for every project or just one. Clearing it restores
+the default.
 
 Git Tree refreshes when T3 Code sees the checkout's status change. Use its refresh button after
 changing the repository from a terminal or another app. Git Tree is web and desktop only.
