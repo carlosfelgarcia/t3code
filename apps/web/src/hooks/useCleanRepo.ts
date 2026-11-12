@@ -1,7 +1,7 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, DEFAULT_CLEAN_REPO_PROMPT } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
@@ -16,9 +16,6 @@ import { threadEnvironment } from "~/state/threads";
 import { useOrchestrationCommand } from "~/state/use-orchestration-command";
 import { buildThreadRouteParams } from "~/threadRoutes";
 import { DEFAULT_RUNTIME_MODE } from "~/types";
-
-const CLEAN_REPO_PROMPT =
-  "Clean this repo by making sure master/main local branch is up to date (fix any conflicts if need it), removing local branches and prune remote. Do not delete branches that are checked out in a worktree or not yet merged; list those instead. If the working tree has uncommitted changes, stop and tell me instead of stashing or committing them.";
 
 export function failureOf(result: { readonly cause: Cause.Cause<unknown> }): unknown {
   return Option.getOrElse(Cause.findErrorOption(result.cause), () =>
@@ -53,7 +50,7 @@ export function useCleanRepo(project: EnvironmentProject) {
         message: {
           messageId: newMessageId(),
           role: "user",
-          text: CLEAN_REPO_PROMPT,
+          text: resolved.cleanRepoPrompt || DEFAULT_CLEAN_REPO_PROMPT,
           attachments: [],
         },
         modelSelection,

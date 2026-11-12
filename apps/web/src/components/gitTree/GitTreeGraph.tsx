@@ -5,9 +5,11 @@ import { memo, type Ref } from "react";
 
 import { cn } from "~/lib/utils";
 
+import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { GraphEdge, GraphRow } from "./gitTreeLayout";
+import { mergedPullRequestOf } from "./mergedPullRequest";
 
 // Matches the rows' h-7.
 const GIT_TREE_ROW_HEIGHT = 28;
@@ -64,6 +66,7 @@ const GitTreeGraphRow = memo(function GitTreeGraphRow({
   const { commit, row } = item;
   const svgWidth = Math.max(width, 1) * LANE_WIDTH;
   const branches = head ? commit.refs.filter((ref) => ref !== headBranch) : commit.refs;
+  const pullRequest = mergedPullRequestOf(commit);
   return (
     <div
       className={cn(
@@ -114,11 +117,21 @@ const GitTreeGraphRow = memo(function GitTreeGraphRow({
           {tag}
         </Badge>
       ))}
+      {pullRequest === null ? null : (
+        <Badge
+          variant="info"
+          className="shrink-0"
+          title={`Merged pull request ${pullRequest.label}`}
+        >
+          <PullRequestGlyph.merged aria-hidden />
+          {pullRequest.label}
+        </Badge>
+      )}
       <Tooltip>
         <TooltipTrigger
           render={<span className={cn("min-w-0 flex-1 truncate", head && "font-medium")} />}
         >
-          {commit.subject}
+          {pullRequest?.subject ?? commit.subject}
         </TooltipTrigger>
         <TooltipPopup side="bottom" align="start">
           <div className="flex max-w-md flex-col gap-1">

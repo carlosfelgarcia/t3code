@@ -1137,6 +1137,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["pull request merge squash rebase last selected"],
   },
   {
+    id: "clean-repo-prompt",
+    title: "Clean Repo prompt",
+    to: "/settings/source-control",
+    scope: "project-defaults",
+    searchTerms: ["clean repository message instructions prune branches git tree thread details"],
+  },
+  {
     id: "issue-default-author",
     title: "Default issue author",
     to: "/settings/source-control",
