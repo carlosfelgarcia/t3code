@@ -8,6 +8,7 @@ import {
   BrushCleaningIcon,
   FolderTreeIcon,
   GitBranchIcon,
+  MessageSquarePlusIcon,
   RefreshCwIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -26,6 +27,7 @@ import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
 import { GitTreeGraph, type GitTreeGraphItem } from "./GitTreeGraph";
 import { gitCommandErrorDetail, useGitTreeData } from "./useGitTreeData";
+import { useNewThreadOnBranch } from "./useNewThreadOnBranch";
 
 function PageMessage({ children }: { children: React.ReactNode }) {
   return (
@@ -38,25 +40,27 @@ function PageMessage({ children }: { children: React.ReactNode }) {
 type Operation = "pull" | "push" | "fetch" | "clean" | "refresh";
 
 /**
- * `cwd` is the checkout the graph marks as current and Pull and Push act on. Clean Repo starts its
- * thread in `cleanProject`, the project rooted at that checkout, so it is off without one.
+ * `cwd` is the checkout the graph marks as current and Pull and Push act on. Clean Repo and New
+ * thread start their threads in `project`, the project rooted at that checkout, so they are off
+ * without one.
  */
 export function GitTreeView({
   environmentId,
   name,
   cwd,
-  cleanProject,
+  project,
   picker,
 }: {
   environmentId: EnvironmentId;
   name: string;
   cwd: string;
-  cleanProject: EnvironmentProject | null;
+  project: EnvironmentProject | null;
   picker: React.ReactNode;
 }) {
   const { data, error, loadingMore, reload, loadMore } = useGitTreeData(environmentId, cwd);
   const [running, setRunning] = useState<Operation | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
   const listRef = useRef<LegendListRef>(null);
 
   const pull = useAtomCommand(vcsEnvironment.pull, { reportFailure: false });
@@ -64,6 +68,7 @@ export function GitTreeView({
   const fetchPrune = useAtomCommand(vcsEnvironment.fetchPrune, { reportFailure: false });
   const deleteBranch = useAtomCommand(vcsEnvironment.deleteBranch, { reportFailure: false });
   const canWrite = useAtomValue(vcsEnvironment.push.permissionAtom(environmentId));
+  const newThread = useNewThreadOnBranch({ environmentId, name, project });
 
   const run = async (operation: Operation, title: string, action: () => Promise<string | null>) => {
     if (running !== null) return;
@@ -144,6 +149,23 @@ export function GitTreeView({
     await reload();
   };
 
+  const openThread = async (ref: VcsRef): Promise<void> => {
+    if (opening !== null) return;
+    setOpening(ref.name);
+    const failure = await newThread.openThread(ref).then(
+      () => null,
+      (cause: unknown) => gitCommandErrorDetail(cause),
+    );
+    setOpening(null);
+    if (failure === null) return;
+    toastManager.add({
+      type: "error",
+      title: `Could not start a thread on ${ref.name}`,
+      description: failure,
+    });
+    await reload();
+  };
+
   const items: GitTreeGraphItem[] = (data?.pages ?? []).flatMap((page) =>
     page.commits.map((commit, index) => ({ commit, row: page.layout.rows[index]! })),
   );
@@ -161,6 +183,8 @@ export function GitTreeView({
   };
   const busy = running !== null;
   const writeTitle = canWrite ? undefined : "Needs source control write access";
+  const branchBusy = deleting !== null || opening !== null;
+  const currentBlockedReason = currentRef === null ? null : newThread.blockedReason(currentRef);
 
   const toolbar = (
     <div className="flex shrink-0 flex-wrap items-center gap-1 px-3 py-2">
@@ -195,14 +219,34 @@ export function GitTreeView({
         {running === "fetch" ? <Spinner aria-hidden /> : <RefreshCwIcon aria-hidden />}
         Fetch & prune
       </Button>
-      {cleanProject === null ? (
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={busy || branchBusy || currentRef === null || currentBlockedReason !== null}
+        title={
+          currentRef === null
+            ? "Check out a branch to start a thread on it"
+            : (currentBlockedReason ?? `Start a new thread on ${currentRef.name}`)
+        }
+        onClick={() => {
+          if (currentRef !== null) void openThread(currentRef);
+        }}
+      >
+        {currentRef !== null && opening === currentRef.name ? (
+          <Spinner aria-hidden />
+        ) : (
+          <MessageSquarePlusIcon aria-hidden />
+        )}
+        New thread
+      </Button>
+      {project === null ? (
         <Button size="sm" variant="outline" disabled title={`Add ${name} as a project to clean it`}>
           <BrushCleaningIcon aria-hidden />
           Clean Repo
         </Button>
       ) : (
         <CleanRepoButton
-          project={cleanProject}
+          project={project}
           disabled={busy || data?.isRepo !== true}
           running={running === "clean"}
           onClean={(cleanRepo) => void runCleanRepo(cleanRepo)}
@@ -244,9 +288,13 @@ export function GitTreeView({
               key={ref.name}
               branch={ref}
               deleting={deleting === ref.name}
-              canDelete={canWrite && deleting === null}
+              canDelete={canWrite && !branchBusy}
+              opening={opening === ref.name}
+              newThreadBlockedReason={newThread.blockedReason(ref)}
+              canOpenThread={!branchBusy}
               onSelect={() => scrollToBranch(ref)}
               onDelete={() => void removeBranch(ref)}
+              onOpenThread={() => void openThread(ref)}
             />
           ))}
           {data.refs.length === 0 ? (
@@ -302,14 +350,22 @@ function BranchRow({
   branch,
   deleting,
   canDelete,
+  opening,
+  newThreadBlockedReason,
+  canOpenThread,
   onSelect,
   onDelete,
+  onOpenThread,
 }: {
   branch: VcsRef;
   deleting: boolean;
   canDelete: boolean;
+  opening: boolean;
+  newThreadBlockedReason: string | null;
+  canOpenThread: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  onOpenThread: () => void;
 }) {
   // The main checkout's own branch is `current`; any other path is a thread's worktree.
   const inWorktree = branch.worktreePath !== null && !branch.current;
@@ -361,6 +417,16 @@ function BranchRow({
           </span>
         )}
       </button>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        aria-label={`New thread on ${branch.name}`}
+        title={newThreadBlockedReason ?? `New thread on ${branch.name}`}
+        disabled={!canOpenThread || newThreadBlockedReason !== null}
+        onClick={onOpenThread}
+      >
+        {opening ? <Spinner aria-hidden /> : <MessageSquarePlusIcon aria-hidden />}
+      </Button>
       <Button
         size="icon-sm"
         variant="ghost"
