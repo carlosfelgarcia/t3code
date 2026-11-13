@@ -365,6 +365,11 @@ branches and prunes remotes. It keeps branches that are unmerged or checked out 
 lists them, and if the folder has uncommitted changes it stops and tells you rather than stashing
 or committing them.
 
+**New thread** opens a new thread on the checked-out branch, and the button on a branch's row opens
+one on that branch. You write its first message. The thread runs where the branch is checked out:
+the project's main folder or the worktree that has it. A branch checked out nowhere first gets a
+new worktree with that branch checked out, which needs source control write access.
+
 To change what Clean Repo asks its agent to do, edit **Clean Repo prompt** under
 **Settings → Source Control → Repositories**, for every project or just one. Clearing it restores
 the default.
@@ -381,8 +386,8 @@ listing the project's own repository and each Git repository beside it. Each tab
 choice. Repositories that are not cloned there do not appear.
 
 Git Tree on a sibling repository acts on that clone directly, on whatever branch it has checked
-out. **Clean Repo** is available only when the sibling repository is also a project in T3 Code,
-and its thread starts in that project.
+out. **Clean Repo** and **New thread** are available only when the sibling repository is also a
+project in T3 Code, and their threads start in that project.
 
 ## Troubleshooting
 

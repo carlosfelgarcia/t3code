@@ -14,6 +14,7 @@ Terms whose meaning matters across T3 Code. Architecture and lifecycle constrain
 | Worktree           | A separate Git checkout a thread can use instead of the project's main checkout.                  |
 | Sibling repository | A Git repository in the same parent directory as a project's workspace root. Not a project.       |
 | Thread             | The durable conversation and work history for a project. It survives provider process exits.      |
+| Draft thread       | A new thread that lives only in the client until its first message is sent.                       |
 | Turn               | One user-to-agent cycle, a V2 run. Provider work can end before checkpoint and diff work settles. |
 | Activity           | A non-message timeline item, such as a tool action, approval, or failure.                         |
 | T3 home            | The base data directory. Runtime state normally lives under its `userdata` directory.             |

@@ -36,7 +36,7 @@ function ProjectGitTreePanel({
       environmentId={project.environmentId}
       name={sibling?.name ?? project.title}
       cwd={sibling?.path ?? cwd}
-      cleanProject={sibling === null ? project : siblingProject}
+      project={sibling === null ? project : siblingProject}
       picker={
         siblings === null || siblings.length === 0 ? null : (
           <>
