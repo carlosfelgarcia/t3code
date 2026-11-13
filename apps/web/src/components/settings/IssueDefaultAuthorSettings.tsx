@@ -63,8 +63,8 @@ export function IssueDefaultAuthorSettingsSection({
         {...searchableSetting("issue-default-author")}
         description={
           singleEnvironment
-            ? "Who the Issues view filters by when you open it. Picking another author on the page lasts until you leave Issues."
-            : "Who the Issues view filters by when you open it. Choose one environment to pick a fixed login from its gh accounts."
+            ? "Who a thread's Issues tab filters by when it opens. Picking another author in the tab lasts while it shows."
+            : "Who a thread's Issues tab filters by when it opens. Choose one environment to pick a fixed login from its gh accounts."
         }
         resetAction={
           isDefault ? null : (

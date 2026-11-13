@@ -133,6 +133,12 @@ export function createProjectEnvironmentAtoms<R, E>(
       tag: WS_METHODS.projectsListIgnoredFiles,
       staleTimeMs: 15_000,
     }),
+    listSiblingRepositories: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:projects:list-sibling-repositories",
+      tag: WS_METHODS.projectsListSiblingRepositories,
+      staleTimeMs: 60_000,
+      idleTtlMs: 5 * 60_000,
+    }),
     readFile: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:projects:read-file",
       tag: WS_METHODS.projectsReadFile,

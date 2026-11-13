@@ -1671,17 +1671,6 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
-  actionItems.push({
-    kind: "action",
-    value: "action:git-tree",
-    searchTerms: ["git", "tree", "graph", "branches", "commits", "history", "clean", "prune"],
-    title: "Open Git Tree",
-    icon: <GitGraphIcon className={ITEM_ICON_CLASS} />,
-    run: async () => {
-      await navigate({ to: "/git-tree" });
-    },
-  });
-
   const activeThreadProject =
     activeThread === null
       ? undefined
@@ -1708,7 +1697,17 @@ function OpenCommandPaletteDialog(props: {
     actionItems.push({
       kind: "action",
       value: "action:open-thread-git-tree",
-      searchTerms: ["git", "tree", "graph", "branches", "commits", "panel"],
+      searchTerms: [
+        "git",
+        "tree",
+        "graph",
+        "branches",
+        "commits",
+        "history",
+        "clean",
+        "prune",
+        "panel",
+      ],
       title: "Open Git Tree in panel",
       icon: <GitGraphIcon className={ITEM_ICON_CLASS} />,
       run: async () => {

@@ -187,9 +187,10 @@ export function RightPanelSurfaceContent(props: {
     case "git-tree":
       return props.files.projectId === undefined || !props.files.workspaceRoot ? null : (
         <ThreadGitTreePanel
-          environmentId={props.environmentId}
+          threadRef={threadRef}
           projectId={props.files.projectId}
           cwd={props.files.workspaceRoot}
+          surface={surface}
         />
       );
     case "side-chat":

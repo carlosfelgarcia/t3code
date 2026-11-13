@@ -1144,6 +1144,13 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["clean repository message instructions prune branches git tree thread details"],
   },
   {
+    id: "list-sibling-repositories",
+    title: "List sibling repositories",
+    to: "/settings/source-control",
+    scope: "project-defaults",
+    searchTerms: ["sibling repositories repos parent folder issues git tree thread details picker"],
+  },
+  {
     id: "issue-default-author",
     title: "Default issue author",
     to: "/settings/source-control",
