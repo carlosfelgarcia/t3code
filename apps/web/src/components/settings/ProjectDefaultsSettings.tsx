@@ -104,6 +104,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
   const mixedWorkspace = useScopedSettingsMixed(["defaultThreadEnvMode"]);
   const mixedAutoPull = useScopedSettingsMixed(["defaultAutoPull"]);
   const mixedAgentCredits = useScopedSettingsMixed(["removeAgentCreditsOnMerge"]);
+  const mixedSiblingRepositories = useScopedSettingsMixed(["listSiblingRepositories"]);
   const mixedMergeMethod = useScopedSettingsMixed(["pullRequestMergeMethod"]);
   const modelSource = useScopedSettingSource(["defaultModelSelection"]);
   const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
@@ -514,6 +515,30 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
             }
           />
           <CleanRepoPromptSettings />
+          <SettingsRow
+            serverScoped
+            settingKeys={["listSiblingRepositories"]}
+            mixed={mixedSiblingRepositories}
+            {...searchableSetting("list-sibling-repositories")}
+            description="A thread's Issues and Git Tree tabs can switch to the Git repositories in the same parent folder as the project."
+            resetAction={
+              settings.listSiblingRepositories ? (
+                <SettingResetButton
+                  label="sibling repositories"
+                  tooltip="Stop listing sibling repositories"
+                  onClick={() => updateSettings({ listSiblingRepositories: false })}
+                />
+              ) : null
+            }
+            control={
+              <Switch
+                aria-label="List sibling repositories"
+                mixed={mixedSiblingRepositories}
+                checked={mixedSiblingRepositories ? false : settings.listSiblingRepositories}
+                onCheckedChange={(enabled) => updateSettings({ listSiblingRepositories: enabled })}
+              />
+            }
+          />
         </>
       )}
     </SettingsSection>

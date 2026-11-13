@@ -1,13 +1,11 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { LegendListRef } from "@legendapp/list/react";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
-import { type EnvironmentId, type ProjectId, type VcsRef } from "@t3tools/contracts";
-import { useNavigate, useSearch } from "@tanstack/react-router";
+import type { EnvironmentId, VcsRef } from "@t3tools/contracts";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
   BrushCleaningIcon,
-  FolderGit2Icon,
   FolderTreeIcon,
   GitBranchIcon,
   RefreshCwIcon,
@@ -16,117 +14,18 @@ import {
 import { useRef, useState } from "react";
 
 import { requestConfirmDialog } from "~/confirmDialog";
-import { isElectron } from "~/env";
 import { failureOf, useCleanRepo } from "~/hooks/useCleanRepo";
 import { cn } from "~/lib/utils";
-import { useProjects } from "~/state/entities";
-import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { vcsEnvironment } from "~/state/vcs";
 
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { RefreshIcon } from "../ui/refresh-icon";
-import { SidebarInset } from "../ui/sidebar";
 import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
-import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
-import { WorkspacePageHeader } from "../WorkspacePageHeader";
-import { PullRequestCompactFilterMenu } from "../pullRequest/PullRequestCompactFilterMenu";
 import { GitTreeGraph, type GitTreeGraphItem } from "./GitTreeGraph";
 import { gitCommandErrorDetail, useGitTreeData } from "./useGitTreeData";
-
-export interface GitTreeSearch {
-  readonly environmentId?: EnvironmentId;
-  readonly projectId?: ProjectId;
-}
-
-const projectKey = (project: Pick<EnvironmentProject, "environmentId" | "id">) =>
-  JSON.stringify([project.environmentId, project.id]);
-
-export function GitTreePage() {
-  const search = useSearch({ from: "/_chat/git-tree" });
-  const navigate = useNavigate({ from: "/git-tree" });
-  const { environments } = useEnvironments();
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const projects = useProjects()
-    .filter((project) => project.isScratch !== true)
-    .toSorted(
-      (left, right) =>
-        Number(right.environmentId === primaryEnvironmentId) -
-          Number(left.environmentId === primaryEnvironmentId) ||
-        left.title.localeCompare(right.title),
-    );
-  const project =
-    projects.find(
-      (candidate) =>
-        candidate.id === search.projectId && candidate.environmentId === search.environmentId,
-    ) ??
-    projects[0] ??
-    null;
-  const multipleEnvironments = new Set(projects.map((entry) => entry.environmentId)).size > 1;
-  const environmentLabel = (environmentId: EnvironmentId) =>
-    environments.find((environment) => environment.environmentId === environmentId)?.label ??
-    environmentId;
-  const projectOptions = projects.map((entry) => ({
-    value: projectKey(entry),
-    label: multipleEnvironments
-      ? `${entry.title} · ${environmentLabel(entry.environmentId)}`
-      : entry.title,
-    Icon: FolderGit2Icon,
-  }));
-  const selectProject = (key: string) => {
-    const next = projects.find((entry) => projectKey(entry) === key);
-    if (next === undefined) return;
-    void navigate({
-      search: { environmentId: next.environmentId, projectId: next.id },
-      replace: true,
-    });
-  };
-
-  return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
-      {project === null ? (
-        <>
-          <GitTreeHeader />
-          <PageMessage>Add a project to see its Git tree.</PageMessage>
-        </>
-      ) : (
-        <GitTreeView
-          key={projectKey(project)}
-          project={project}
-          cwd={project.workspaceRoot}
-          layout="page"
-          projectPicker={
-            projectOptions.length > 1 ? (
-              <PullRequestCompactFilterMenu
-                label="Project"
-                outlined
-                value={projectKey(project)}
-                options={projectOptions}
-                onChange={selectProject}
-              />
-            ) : null
-          }
-        />
-      )}
-    </SidebarInset>
-  );
-}
-
-function GitTreeHeader({ children }: { children?: React.ReactNode }) {
-  return (
-    <WorkspacePageHeader electron={isElectron} className="relative bg-background">
-      <WorkspaceBreadcrumb ariaLabel="Git Tree breadcrumb">
-        <WorkspaceBreadcrumbItem current>
-          <h1 className="truncate">Git Tree</h1>
-        </WorkspaceBreadcrumbItem>
-      </WorkspaceBreadcrumb>
-      <div className="min-w-0 flex-1" />
-      {children}
-    </WorkspacePageHeader>
-  );
-}
 
 function PageMessage({ children }: { children: React.ReactNode }) {
   return (
@@ -138,19 +37,23 @@ function PageMessage({ children }: { children: React.ReactNode }) {
 
 type Operation = "pull" | "push" | "fetch" | "clean" | "refresh";
 
-/** `cwd` is the checkout the graph marks as current and Pull and Push act on. */
+/**
+ * `cwd` is the checkout the graph marks as current and Pull and Push act on. Clean Repo starts its
+ * thread in `cleanProject`, the project rooted at that checkout, so it is off without one.
+ */
 export function GitTreeView({
-  project,
+  environmentId,
+  name,
   cwd,
-  layout,
-  projectPicker = null,
+  cleanProject,
+  picker,
 }: {
-  project: EnvironmentProject;
+  environmentId: EnvironmentId;
+  name: string;
   cwd: string;
-  layout: "page" | "panel";
-  projectPicker?: React.ReactNode;
+  cleanProject: EnvironmentProject | null;
+  picker: React.ReactNode;
 }) {
-  const { environmentId } = project;
   const { data, error, loadingMore, reload, loadMore } = useGitTreeData(environmentId, cwd);
   const [running, setRunning] = useState<Operation | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -161,7 +64,6 @@ export function GitTreeView({
   const fetchPrune = useAtomCommand(vcsEnvironment.fetchPrune, { reportFailure: false });
   const deleteBranch = useAtomCommand(vcsEnvironment.deleteBranch, { reportFailure: false });
   const canWrite = useAtomValue(vcsEnvironment.push.permissionAtom(environmentId));
-  const { canCleanRepo, cleanRepo } = useCleanRepo(project);
 
   const run = async (operation: Operation, title: string, action: () => Promise<string | null>) => {
     if (running !== null) return;
@@ -203,7 +105,7 @@ export function GitTreeView({
     });
   const runRefresh = () => run("refresh", "Refresh failed", async () => null);
 
-  const runCleanRepo = () =>
+  const runCleanRepo = (cleanRepo: () => Promise<void>) =>
     run("clean", "Clean Repo failed", async () => {
       await cleanRepo();
       return null;
@@ -261,13 +163,8 @@ export function GitTreeView({
   const writeTitle = canWrite ? undefined : "Needs source control write access";
 
   const toolbar = (
-    <div
-      className={cn(
-        "flex shrink-0 items-center gap-1",
-        layout === "panel" && "flex-wrap px-3 py-2",
-      )}
-    >
-      {projectPicker}
+    <div className="flex shrink-0 flex-wrap items-center gap-1 px-3 py-2">
+      {picker}
       <Button
         size="sm"
         variant="outline"
@@ -298,20 +195,19 @@ export function GitTreeView({
         {running === "fetch" ? <Spinner aria-hidden /> : <RefreshCwIcon aria-hidden />}
         Fetch & prune
       </Button>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={!canCleanRepo || busy || data?.isRepo !== true}
-        title={
-          canCleanRepo
-            ? "Start an agent thread in the main checkout that cleans up this repository"
-            : "Needs permission to start threads"
-        }
-        onClick={() => void runCleanRepo()}
-      >
-        {running === "clean" ? <Spinner aria-hidden /> : <BrushCleaningIcon aria-hidden />}
-        Clean Repo
-      </Button>
+      {cleanProject === null ? (
+        <Button size="sm" variant="outline" disabled title={`Add ${name} as a project to clean it`}>
+          <BrushCleaningIcon aria-hidden />
+          Clean Repo
+        </Button>
+      ) : (
+        <CleanRepoButton
+          project={cleanProject}
+          disabled={busy || data?.isRepo !== true}
+          running={running === "clean"}
+          onClean={(cleanRepo) => void runCleanRepo(cleanRepo)}
+        />
+      )}
       <Button
         size="icon-sm"
         variant="ghost"
@@ -335,16 +231,13 @@ export function GitTreeView({
       );
     }
     if (!data.isRepo) {
-      return <PageMessage>{project.title} is not a Git repository.</PageMessage>;
+      return <PageMessage>{name} is not a Git repository.</PageMessage>;
     }
     return (
       <div className="@container/git-tree flex min-h-0 flex-1 border-t border-border/60">
         <aside
           aria-label="Branches"
-          className={cn(
-            "flex shrink-0 flex-col overflow-y-auto border-r border-border/60 py-2",
-            layout === "page" ? "w-72" : "w-56 @2xl/git-tree:w-72",
-          )}
+          className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-border/60 py-2 @2xl/git-tree:w-72"
         >
           {data.refs.map((ref) => (
             <BranchRow
@@ -399,7 +292,7 @@ export function GitTreeView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {layout === "page" ? <GitTreeHeader>{toolbar}</GitTreeHeader> : toolbar}
+      {toolbar}
       {body}
     </div>
   );
@@ -479,5 +372,35 @@ function BranchRow({
         {deleting ? <Spinner aria-hidden /> : <Trash2Icon aria-hidden />}
       </Button>
     </div>
+  );
+}
+
+function CleanRepoButton({
+  project,
+  disabled,
+  running,
+  onClean,
+}: {
+  project: EnvironmentProject;
+  disabled: boolean;
+  running: boolean;
+  onClean: (cleanRepo: () => Promise<void>) => void;
+}) {
+  const { canCleanRepo, cleanRepo } = useCleanRepo(project);
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={!canCleanRepo || disabled}
+      title={
+        canCleanRepo
+          ? "Start an agent thread in the main checkout that cleans up this repository"
+          : "Needs permission to start threads"
+      }
+      onClick={() => onClean(cleanRepo)}
+    >
+      {running ? <Spinner aria-hidden /> : <BrushCleaningIcon aria-hidden />}
+      Clean Repo
+    </Button>
   );
 }

@@ -1,11 +1,4 @@
-import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  ChartNoAxesColumnIcon,
-  CircleDotIcon,
-  GitGraphIcon,
-  SettingsIcon,
-} from "lucide-react";
+import { ArrowLeftIcon, ArrowRightIcon, ChartNoAxesColumnIcon, SettingsIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { memo } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
@@ -245,14 +238,6 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
       search: readPullRequestListPreferences(),
     });
   };
-  const handleIssuesClick = () => {
-    closeMobileSidebar();
-    void navigate({ to: "/issues", search: { state: "open" } });
-  };
-  const handleGitTreeClick = () => {
-    closeMobileSidebar();
-    void navigate({ to: "/git-tree" });
-  };
   const handleSettingsClick = () => {
     closeMobileSidebar();
     void navigate({ to: "/settings" });
@@ -287,24 +272,12 @@ const SidebarUtilityMenu = memo(function SidebarUtilityMenu() {
             onClick={handleSettingsClick}
           />
           {pullRequestsSupported ? (
-            <>
-              <SidebarUtilityItem
-                icon={<PullRequestGlyph.pullRequest />}
-                label="Pull requests"
-                onClick={handlePullRequestsClick}
-              />
-              <SidebarUtilityItem
-                icon={<CircleDotIcon />}
-                label="Issues"
-                onClick={handleIssuesClick}
-              />
-            </>
+            <SidebarUtilityItem
+              icon={<PullRequestGlyph.pullRequest />}
+              label="Pull requests"
+              onClick={handlePullRequestsClick}
+            />
           ) : null}
-          <SidebarUtilityItem
-            icon={<GitGraphIcon />}
-            label="Git Tree"
-            onClick={handleGitTreeClick}
-          />
           <SidebarUtilityItem
             icon={<ChartNoAxesColumnIcon />}
             label="Usage"

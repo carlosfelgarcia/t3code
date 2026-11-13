@@ -1192,6 +1192,7 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "textGenerationModelSelection",
   "threadTitleInstructions",
   "cleanRepoPrompt",
+  "listSiblingRepositories",
   "sourceControlWriterModelSelection",
   "reviewGuideModelSelection",
   "reviewGuideInstructions",
@@ -1231,6 +1232,7 @@ export const ProjectSettingsOverrides = Schema.Struct({
   textGenerationModelSelection: Schema.optionalKey(ModelSelection),
   threadTitleInstructions: Schema.optionalKey(TrimmedString),
   cleanRepoPrompt: Schema.optionalKey(TrimmedString),
+  listSiblingRepositories: Schema.optionalKey(Schema.Boolean),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   reviewGuideModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
   reviewGuideInstructions: Schema.optionalKey(TrimmedString),
@@ -1539,6 +1541,7 @@ export const ServerSettings = Schema.Struct({
   threadTitleInstructions: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   /** Empty sends DEFAULT_CLEAN_REPO_PROMPT, so an untouched setting follows default updates. */
   cleanRepoPrompt: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  listSiblingRepositories: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   branchNamingMode: BranchNamingMode.pipe(
     Schema.withDecodingDefault(Effect.succeed("static" as const)),
   ),
@@ -1930,6 +1933,7 @@ export const ServerSettingsPatch = Schema.Struct({
   textGenerationModelSelection: Schema.optionalKey(ModelSelectionPatch),
   threadTitleInstructions: Schema.optionalKey(TrimmedString),
   cleanRepoPrompt: Schema.optionalKey(TrimmedString),
+  listSiblingRepositories: Schema.optionalKey(Schema.Boolean),
   branchNamingMode: Schema.optionalKey(BranchNamingMode),
   branchNamePrefix: Schema.optionalKey(TrimmedString),
   branchNameInstructions: Schema.optionalKey(TrimmedString),

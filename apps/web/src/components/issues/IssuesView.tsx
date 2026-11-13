@@ -14,7 +14,6 @@ import {
   type PullRequestLabel,
   type ScopedThreadRef,
 } from "@t3tools/contracts";
-import { useNavigate, useSearch } from "@tanstack/react-router";
 import { AsyncResult } from "effect/reactivity";
 import {
   BanIcon,
@@ -24,19 +23,16 @@ import {
   FolderGit2Icon,
   LayersIcon,
   ListChecksIcon,
-  ServerIcon,
   TagIcon,
   UserIcon,
 } from "lucide-react";
 import { useContext, useEffect, useState } from "react";
 
 import type { DraftId } from "~/composerDraftStore";
-import { isElectron } from "~/env";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { registerCommands } from "~/shortcuts/dispatcher";
 import { cn } from "~/lib/utils";
-import { useAllEnvironmentShellsBootstrapped, useProjects } from "~/state/entities";
-import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
+import { useEnvironments } from "~/state/environments";
 import { issueEnvironment, issueLabelCandidateLists, issueListPages } from "~/state/issues";
 import { formatEnvironmentQueryError, useEnvironmentQuery } from "~/state/query";
 import { sourceControlEnvironment } from "~/state/sourceControl";
@@ -46,12 +42,9 @@ import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
 import { Menu, MenuCheckboxItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { RefreshIcon } from "../ui/refresh-icon";
-import { SidebarInset } from "../ui/sidebar";
 import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
-import { WorkspaceBreadcrumb, WorkspaceBreadcrumbItem } from "../WorkspaceBreadcrumb";
-import { WorkspacePageHeader } from "../WorkspacePageHeader";
 import { PullRequestCandidatePicker } from "../pullRequest/PullRequestCandidatePicker";
 import { PullRequestCompactFilterMenu } from "../pullRequest/PullRequestCompactFilterMenu";
 import { readableFailure } from "../pullRequest/pullRequestDetail.logic";
@@ -82,8 +75,6 @@ import {
   issueBulkLabels,
   type IssueLabelEdit,
   issueKey,
-  issueRepositories,
-  projectIssueRepositories,
   issueRepositoryKey,
   issueRowLabels,
   issueRowState,
@@ -100,8 +91,6 @@ export interface IssuesSearch {
   readonly repo?: string;
   /** GitHub login of whoever opened the issue, or `ISSUE_AUTHOR_ALL`. Absent: the default. */
   readonly author?: string;
-  /** The environment whose GitHub credentials read the list. */
-  readonly environmentId?: EnvironmentId;
   readonly host?: string;
   readonly repository?: string;
   readonly number?: number;
@@ -140,72 +129,42 @@ const STATE_OPTIONS = [
   { value: "all", label: "All", Icon: LayersIcon },
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<IssueListState>>;
 
-export function IssuesPage() {
-  const search = useSearch({ from: "/_chat/issues" });
-  const navigate = useNavigate({ from: "/issues" });
-  return (
-    <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
-      <IssuesView
-        search={search}
-        onSearchChange={(patch, options) =>
-          void navigate({
-            search: (previous) => patchSearch(previous, patch),
-            replace: options?.push !== true,
-          })
-        }
-      />
-    </SidebarInset>
-  );
-}
-
+/**
+ * Lists one repository's issues at a time, read with `environmentId`. `repositories` are the
+ * choices (a fork and its upstream); `projects` are where Start thread can open a thread.
+ */
 export function IssuesView({
   search,
   onSearchChange: onSearchChangeProp,
-  thread,
+  environmentId: requestedEnvironmentId,
+  repositories,
+  projects,
+  composerDraftTarget,
+  picker,
 }: {
   search: IssuesSearch;
   onSearchChange: (patch: IssuesSearchPatch, options?: { readonly push: true }) => void;
-  /** Set in a thread's panel: lists that project's repositories, read with its environment. */
-  thread?: {
-    readonly project: EnvironmentProject;
-    readonly composerDraftTarget: ScopedThreadRef | DraftId;
-  };
+  environmentId: EnvironmentId;
+  repositories: ReadonlyArray<IssueRepository>;
+  projects: ReadonlyArray<EnvironmentProject>;
+  composerDraftTarget: ScopedThreadRef | DraftId;
+  picker: React.ReactNode;
 }) {
   const onSearchChange = useStableCallback(onSearchChangeProp);
   const registry = useContext(RegistryContext);
   const { environments } = useEnvironments();
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const allProjects = useProjects();
-  const projectsKnown = useAllEnvironmentShellsBootstrapped();
   const invalidate = useAtomCommand(issueEnvironment.invalidate, { reportFailure: false });
 
-  const capableEnvironments = environments.filter(
-    (environment) => environment.serverConfig !== null,
-  );
-  const capableIds = new Set(capableEnvironments.map((environment) => environment.environmentId));
-  const environmentId =
-    (thread === undefined
-      ? [search.environmentId, primaryEnvironmentId, capableEnvironments[0]?.environmentId]
-      : [thread.project.environmentId]
-    ).find((id): id is EnvironmentId => id != null && capableIds.has(id)) ?? null;
-  const projects = (thread === undefined ? allProjects : [thread.project]).filter((project) =>
-    capableIds.has(project.environmentId),
-  );
-  const repositories =
-    thread === undefined ? issueRepositories(projects) : projectIssueRepositories(thread.project);
+  const environmentId = environments.some(
+    (environment) =>
+      environment.environmentId === requestedEnvironmentId && environment.serverConfig !== null,
+  )
+    ? requestedEnvironmentId
+    : null;
   const threadRepository =
-    thread === undefined
-      ? undefined
-      : (repositories.find((repository) => issueRepositoryKey(repository) === search.repo) ??
-        repositories[0]);
-  const scopedRepositories =
-    thread !== undefined
-      ? threadRepository === undefined
-        ? []
-        : [threadRepository]
-      : search.repo === undefined
-        ? repositories
-        : repositories.filter((repository) => issueRepositoryKey(repository) === search.repo);
+    repositories.find((repository) => issueRepositoryKey(repository) === search.repo) ??
+    repositories[0];
+  const scopedRepositories = threadRepository === undefined ? [] : [threadRepository];
   const otherRepository =
     threadRepository === undefined
       ? null
@@ -470,43 +429,20 @@ export function IssuesView({
     ...option,
     Icon: UserIcon,
   }));
-  const environmentOptions = capableEnvironments.map((environment) => ({
-    value: environment.environmentId as string,
-    label: `Read with ${environment.label}`,
-    Icon: ServerIcon,
+  const repositoryOptions = repositories.map((repository) => ({
+    value: issueRepositoryKey(repository),
+    label: repository.repository,
+    Icon: FolderGit2Icon,
   }));
-  const repositoryOptions = [
-    ...(thread === undefined
-      ? [{ value: "", label: "All repositories", Icon: FolderGit2Icon }]
-      : []),
-    ...repositories.map((repository) => ({
-      value: issueRepositoryKey(repository),
-      label: repository.repository,
-      Icon: FolderGit2Icon,
-    })),
-  ];
 
   const listBody = (() => {
     if (environmentId === null) {
       return <ListMessage>Connect to an environment to see issues.</ListMessage>;
     }
     if (repositories.length === 0) {
-      if (thread !== undefined) {
-        return (
-          <ListMessage>
-            Issues currently support GitHub only, and this project is not backed by a GitHub
-            repository.
-          </ListMessage>
-        );
-      }
-      return projectsKnown ? (
+      return (
         <ListMessage>
-          Issues currently support GitHub only, and none of your projects is backed by a GitHub
-          repository.
-        </ListMessage>
-      ) : (
-        <ListMessage>
-          <Spinner aria-hidden /> Loading projects…
+          Issues currently support GitHub only, and this repository is not on GitHub.
         </ListMessage>
       );
     }
@@ -578,35 +514,15 @@ export function IssuesView({
       <div
         className={cn(
           "@container/pr-list min-h-0 min-w-0 flex-col overflow-x-hidden bg-background",
-          selected === null
-            ? "flex flex-1"
-            : thread !== undefined
-              ? "hidden"
-              : "hidden border-r border-border/60 lg:flex lg:w-[28rem] lg:shrink-0",
+          selected === null ? "flex flex-1" : "hidden",
         )}
       >
-        {thread === undefined ? (
-          <WorkspacePageHeader electron={isElectron} className="relative bg-background">
-            <WorkspaceBreadcrumb ariaLabel="Issues breadcrumb">
-              <WorkspaceBreadcrumbItem current>
-                <h1 className="truncate">Issues</h1>
-              </WorkspaceBreadcrumbItem>
-            </WorkspaceBreadcrumb>
-            <div className="min-w-0 flex-1" />
+        <div className="flex shrink-0 flex-col gap-2 px-4 pt-3 pb-3">
+          <div className="flex items-center gap-1">
+            {picker}
+            <div className="min-w-0 flex-1">{searchInput}</div>
             {refreshButton}
-          </WorkspacePageHeader>
-        ) : null}
-        <div
-          className={cn("flex shrink-0 flex-col gap-2 px-4 pb-3", thread !== undefined && "pt-3")}
-        >
-          {thread === undefined ? (
-            searchInput
-          ) : (
-            <div className="flex items-center gap-1">
-              <div className="min-w-0 flex-1">{searchInput}</div>
-              {refreshButton}
-            </div>
-          )}
+          </div>
           {/* The selection bar covers the filters rather than replacing them, so rows never shift. */}
           <div className="relative">
             <div
@@ -659,15 +575,6 @@ export function IssuesView({
                   updateSearch({ labels: labels.length === 0 ? undefined : labels })
                 }
               />
-              {thread === undefined && environmentOptions.length > 1 && environmentId !== null ? (
-                <PullRequestCompactFilterMenu
-                  label="Read issues with"
-                  outlined
-                  value={environmentId as string}
-                  options={environmentOptions}
-                  onChange={(next) => updateSearch({ environmentId: next as EnvironmentId })}
-                />
-              ) : null}
             </div>
             {selecting && environmentId !== null ? (
               <div className="absolute inset-x-0 top-0 flex items-center gap-2">
@@ -731,7 +638,7 @@ export function IssuesView({
           stateEdit={stateEdits.get(issueKey(selected))}
           changingState={changingState.has(issueKey(selected))}
           onChangeState={(issue, state) => void changeIssueState(issue, state)}
-          composerDraftTarget={thread?.composerDraftTarget}
+          composerDraftTarget={composerDraftTarget}
         />
       ) : null}
     </div>

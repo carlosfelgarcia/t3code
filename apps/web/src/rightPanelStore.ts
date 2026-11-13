@@ -90,15 +90,17 @@ export type RightPanelSurface =
   | {
       id: "issues";
       kind: "issues";
+      /** Path of the chosen sibling repository; absent shows the project's own. */
+      sibling?: string;
       /** Chosen repository as `host/owner/name`; absent opens the project's default. */
       repo?: string;
       issue?: IssueRef;
     }
-  | { id: "git-tree"; kind: "git-tree" };
+  | { id: "git-tree"; kind: "git-tree"; sibling?: string };
 
 export type IssuesPanelSelection = Pick<
   Extract<RightPanelSurface, { kind: "issues" }>,
-  "repo" | "issue"
+  "sibling" | "repo" | "issue"
 >;
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
@@ -182,6 +184,7 @@ interface RightPanelStoreState {
     detailTab: PullRequestDetailTab,
   ) => void;
   setIssuesView: (ref: ScopedThreadRef, view: IssuesPanelSelection) => void;
+  setGitTreeSibling: (ref: ScopedThreadRef, sibling: string | undefined) => void;
   /** Clears the surface's pending link only while it is still `revealUrl`. */
   settlePullRequestReveal: (ref: ScopedThreadRef, surfaceId: string, revealUrl: string) => void;
   openTerminal: (ref: ScopedThreadRef, terminalId: string) => void;
@@ -830,8 +833,24 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
                 ? {
                     id: surface.id,
                     kind: surface.kind,
+                    ...(view.sibling === undefined ? {} : { sibling: view.sibling }),
                     ...(view.repo === undefined ? {} : { repo: view.repo }),
                     ...(view.issue === undefined ? {} : { issue: view.issue }),
+                  }
+                : surface,
+            ),
+          })),
+        ),
+      setGitTreeSibling: (ref, sibling) =>
+        set((state) =>
+          automaticUpdate(state, scopedThreadKey(ref), (current) => ({
+            ...current,
+            surfaces: current.surfaces.map((surface) =>
+              surface.kind === "git-tree"
+                ? {
+                    id: surface.id,
+                    kind: surface.kind,
+                    ...(sibling === undefined ? {} : { sibling }),
                   }
                 : surface,
             ),
@@ -1282,6 +1301,13 @@ useRightPanelStore.subscribe((next, previous) => {
     }
   }
 });
+
+/** Opens the thread's Issues tab on one of its project's own repositories (`host/owner/name`). */
+export function openThreadIssues(ref: ScopedThreadRef, repo: string): void {
+  const store = useRightPanelStore.getState();
+  store.open(ref, "issues");
+  store.setIssuesView(ref, { repo });
+}
 
 export function selectThreadRightPanelState(
   byThreadKey: Record<string, ThreadRightPanelState>,

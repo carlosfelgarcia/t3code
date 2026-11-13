@@ -294,13 +294,13 @@ and their marks follow the same rules as on web and desktop.
 
 ## Issues
 
-The **Issues** button, next to **Pull requests** at the bottom of the sidebar, lists GitHub issues
-from the repositories behind your projects, across your connected environments. A fork lists
-both its upstream repository and your own. Issues currently
-support GitHub only; projects on other hosts do not appear. Filter by repository, state, label,
-and issue author (who opened the issue), or search titles. With more than one environment
-connected, choose which one reads the list; it uses that environment's GitHub credentials. To
-jump straight to one repository, right-click a thread and choose **Open issues**.
+Issues opens in a thread's right panel: choose **Issues** in the thread's details card, **Open
+Issues in panel** in the command palette, or right-click a thread and choose **Open issues**. It
+lists the GitHub issues of the thread's project, read with that project's environment and its
+GitHub credentials. A fork opens on your own repository, with a filter to switch to its upstream;
+if your fork has Issues turned off, the tab says so and offers the upstream instead. Issues
+currently support GitHub only. Filter by state, label, and issue author (who opened the issue), or
+search titles. The tab remembers the issue you opened when you switch tabs or reload.
 
 The author menu lists the GitHub accounts signed in to `gh` on the environment that reads the
 list, active or not. To add a second account, run `gh auth login` for it, then
@@ -309,8 +309,8 @@ list, active or not. To add a second account, run `gh auth login` for it, then
 Issues opens filtered to the active `gh` account on the environment that reads the list, or lists
 all authors and says so when no active account is signed in there. Change
 that in **Settings → Source control → Default issue author**: the active account, a fixed login, or
-all authors. Each environment keeps its own default, and an author picked on the page lasts until
-you leave Issues. An environment running an older T3 Code cannot filter by author; Issues says so
+all authors. Each environment keeps its own default, and an author picked in the tab lasts while
+the tab shows. An environment running an older T3 Code cannot filter by author; Issues says so
 instead of listing everyone.
 
 Open an issue to read its description and comments. You can add and remove labels; if GitHub
@@ -318,7 +318,8 @@ refuses the change, the label goes back and T3 Code says why. **Close issue** an
 sit beside its state, and in the menu when you right-click it in the list. A closed issue can stay
 in the Open list for a moment, marked closed, until GitHub's search catches up. **Start thread**
 opens a draft in the issue's project with the issue's number, title, and link in the composer. Nothing is sent until
-you send it, and the agent reads the rest of the issue itself. Issues are web and desktop only.
+you send it, and the agent reads the rest of the issue itself. **Add to composer** puts the same
+in the composer of the thread whose panel you are in. Issues are web and desktop only.
 
 The list shows the newest issues first, in issue-number order within a repository. To label
 several issues at once, select them with their checkboxes, Ctrl/Cmd-click, or Shift-click for a
@@ -327,13 +328,6 @@ selected issue takes it off all of them; any other label goes on all of them. Se
 Ctrl/Cmd+A in the list) covers only the issues loaded so far, and changing a filter clears the
 selection. A selection across repositories offers only the labels they all have. Right-click an
 issue to start a thread from it, copy its link, or open it on GitHub.
-
-To read issues beside a thread, choose **Issues** in the thread's details card or **Open Issues in
-panel** in the command palette. It opens a tab in the thread's right panel listing the issues of
-that thread's project. A fork opens on your own repository, with a filter to switch to its
-upstream; if your fork has Issues turned off, the tab says so and offers the upstream instead. The
-tab remembers the issue you opened when you switch tabs or reload. An issue opened there also has
-**Add to composer**, which puts its number, title, and link in that thread's composer.
 
 An issue with open blockers is marked in the list with the blocking issues' numbers; hover the
 mark for their titles. An opened issue lists what it is blocked by and what it is blocking, including
@@ -347,12 +341,11 @@ duplicate, use GitHub.
 
 ## Git Tree
 
-**Git Tree**, at the bottom of the sidebar, in the command palette, or as **Open Git Tree** when you
-right-click a thread, shows one project's local
-branches and commit graph, and handles routine branch housekeeping. The page works on the
-project's own folder. **Git Tree** in a thread's details card, or **Open Git Tree in panel** in the
-command palette, opens it in the thread's right panel on that thread's checkout instead, its
-worktree when it has one, so **Pull** and **Push** act on the thread's branch. Branches show how far they are ahead of and
+**Git Tree** in a thread's details card, **Open Git Tree in panel** in the command palette, or
+**Open Git Tree** when you right-click a thread, opens a tab in the thread's right panel that shows
+local branches and the commit graph, and handles routine branch housekeeping. It works on the
+thread's checkout, its worktree when it has one, so **Pull** and **Push** act on the thread's
+branch. Branches show how far they are ahead of and
 behind their upstream, and mark an upstream that was deleted on the remote as **gone** once you
 run **Fetch & prune**. The graph covers local branches, their upstreams and the default branch,
 200 commits at a time.
@@ -366,7 +359,7 @@ never force-pushes; if the remote has commits you don't, pull first. Deleting a 
 unmerged commits asks before force deleting it, and the current branch or one checked out in a
 worktree can't be deleted.
 
-**Clean Repo** starts a thread titled "Clean repo" in the project's folder with the project's
+**Clean Repo** starts a thread titled "Clean repo" in the project's main folder with the project's
 default model, and sends it at once. By default its agent brings `main` or `master` up to date, removes local
 branches and prunes remotes. It keeps branches that are unmerged or checked out in a worktree and
 lists them, and if the folder has uncommitted changes it stops and tells you rather than stashing
@@ -378,6 +371,18 @@ the default.
 
 Git Tree refreshes when T3 Code sees the checkout's status change. Use its refresh button after
 changing the repository from a terminal or another app. Git Tree is web and desktop only.
+
+## Sibling repositories
+
+When a project is a home for work spread over other repositories cloned beside it, in the same
+parent folder, turn on **List sibling repositories** under **Settings → Source Control →
+Repositories** for that project. A thread's Issues and Git Tree tabs then get a repository picker
+listing the project's own repository and each Git repository beside it. Each tab keeps its own
+choice. Repositories that are not cloned there do not appear.
+
+Git Tree on a sibling repository acts on that clone directly, on whatever branch it has checked
+out. **Clean Repo** is available only when the sibling repository is also a project in T3 Code,
+and its thread starts in that project.
 
 ## Troubleshooting
 

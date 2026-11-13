@@ -1106,21 +1106,28 @@ describe("rightPanelStore", () => {
     }
   });
 
-  it("keeps one Issues and one Git tree tab per thread, and the open issue across a reload", async () => {
+  it("keeps one Issues and one Git tree tab per thread, and each tab's repository and open issue across a reload", async () => {
     const store = useRightPanelStore.getState();
-    const issue = { host: "github.com", repository: "acme/web", number: 7 };
+    const issue = { host: "github.com", repository: "acme/oasis", number: 7 };
     store.open(refA, "issues");
     store.open(refA, "git-tree");
     store.open(refA, "issues");
-    store.setIssuesView(refA, { repo: "github.com/acme/web", issue });
+    store.setIssuesView(refA, { sibling: "/work/oasis", repo: "github.com/acme/oasis", issue });
+    store.setGitTreeSibling(refA, "/work/memento");
     store.open(refB, "issues");
 
     expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
       isOpen: true,
       activeSurfaceId: "issues",
       surfaces: [
-        { id: "issues", kind: "issues", repo: "github.com/acme/web", issue },
-        { id: "git-tree", kind: "git-tree" },
+        {
+          id: "issues",
+          kind: "issues",
+          sibling: "/work/oasis",
+          repo: "github.com/acme/oasis",
+          issue,
+        },
+        { id: "git-tree", kind: "git-tree", sibling: "/work/memento" },
       ],
     });
     expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refB)).toEqual({
@@ -1129,18 +1136,30 @@ describe("rightPanelStore", () => {
     });
 
     await reloadRightPanelStore();
-    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
-      id: "issues",
-      kind: "issues",
-      repo: "github.com/acme/web",
-      issue,
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "issues",
+      surfaces: [
+        {
+          id: "issues",
+          kind: "issues",
+          sibling: "/work/oasis",
+          repo: "github.com/acme/oasis",
+          issue,
+        },
+        { id: "git-tree", kind: "git-tree", sibling: "/work/memento" },
+      ],
     });
 
     store.setIssuesView(refA, { repo: "github.com/acme/web" });
-    expect(selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
-      id: "issues",
-      kind: "issues",
-      repo: "github.com/acme/web",
+    store.setGitTreeSibling(refA, undefined);
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "issues",
+      surfaces: [
+        { id: "issues", kind: "issues", repo: "github.com/acme/web" },
+        { id: "git-tree", kind: "git-tree" },
+      ],
     });
     store.closeSurface(refA, "issues");
     store.open(refA, "issues");

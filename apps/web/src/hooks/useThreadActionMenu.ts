@@ -48,6 +48,7 @@ import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
 import { canTurnThreadIntoProject, useThreadActions } from "./useThreadActions";
+import { openThreadIssues, useRightPanelStore } from "~/rightPanelStore";
 
 function failureToast(title: string, error: unknown) {
   toastManager.add(
@@ -191,14 +192,7 @@ export function useThreadActionMenu(input: {
         return;
       }
       if (action.startsWith("open-issues:")) {
-        void router.navigate({
-          to: "/issues",
-          search: {
-            state: "open",
-            repo: action.slice("open-issues:".length),
-            environmentId: threadRef.environmentId,
-          },
-        });
+        openThreadIssues(threadRef, action.slice("open-issues:".length));
         return;
       }
       const reportFailure = async (
@@ -215,10 +209,7 @@ export function useThreadActionMenu(input: {
           onFind?.(threadRef);
           return;
         case "open-git-tree":
-          void router.navigate({
-            to: "/git-tree",
-            search: { environmentId: threadRef.environmentId, projectId: thread.projectId },
-          });
+          useRightPanelStore.getState().open(threadRef, "git-tree");
           return;
         case "project-settings": {
           if (!project) return;
