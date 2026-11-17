@@ -77,7 +77,7 @@ const DUPLICATE: IssueState = { category: "closed", name: "Duplicate", closeReas
 export const ISSUE_STATES: ReadonlyArray<IssueState> = [OPEN, COMPLETED, NOT_PLANNED, DUPLICATE];
 
 /** GitHub uses uppercase close reasons; an open issue has `""` or `REOPENED`. */
-function toIssueState(
+export function toIssueState(
   state: string | null | undefined,
   stateReason: string | null | undefined,
 ): IssueState {

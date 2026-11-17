@@ -17,6 +17,7 @@ import type {
   IssueLinkedPullRequest,
   IssueListState,
   IssueReaction,
+  IssueRelations,
   IssueReactionContent,
   IssueSummary,
   IssueTemplateList,
@@ -92,6 +93,7 @@ export interface TrackerIssueDetail extends TrackerIssueSummary {
   readonly commentsCursor: string | null;
   readonly events: ReadonlyArray<IssueEvent>;
   readonly linkedPullRequests: ReadonlyArray<IssueLinkedPullRequest>;
+  readonly relatedIssues?: IssueRelations;
 }
 
 export interface IssueTrackerApi {

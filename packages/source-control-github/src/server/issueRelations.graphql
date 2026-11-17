@@ -1,0 +1,40 @@
+fragment IssueRelationNode on Issue {
+  number
+  title
+  url
+  state
+  stateReason
+  repository {
+    nameWithOwner
+  }
+}
+
+# Older GitHub Enterprise servers lack these fields; the caller reads a failure as no relations.
+query IssueRelations($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    issue(number: $number) {
+      parent {
+        ...IssueRelationNode
+      }
+      subIssuesSummary {
+        total
+        completed
+      }
+      subIssues(first: 50) {
+        nodes {
+          ...IssueRelationNode
+        }
+      }
+      blockedBy(first: 50) {
+        nodes {
+          ...IssueRelationNode
+        }
+      }
+      blocking(first: 50) {
+        nodes {
+          ...IssueRelationNode
+        }
+      }
+    }
+  }
+}

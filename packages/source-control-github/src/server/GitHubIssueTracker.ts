@@ -16,6 +16,8 @@ import * as GitHubRest from "./GitHubRest.ts";
 import { readIssueTemplates } from "./gitHubIssueTemplates.ts";
 import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
 import * as GitHubGraphQlClient from "./gitHubGraphQlClient.ts";
+import { toIssueRelations } from "./gitHubIssueRelations.ts";
+import { IssueRelationsGraphQLGroup } from "./issueRelations.graphql.ts";
 import { IssuesGraphQLGroup } from "./issues.graphql.ts";
 import { AddReaction, RemoveReaction } from "./pullRequestMutations.graphql.ts";
 import { gitHubReactionContent } from "./gitHubPullRequestJson.ts";
@@ -118,6 +120,7 @@ const FAILURE_DETAIL: Record<IssueTrackerError["reason"], string> = {
 
 const group = GraphQLGroup.merge(
   IssuesGraphQLGroup,
+  IssueRelationsGraphQLGroup,
   GraphQLGroup.make(AddReaction, RemoveReaction),
 ).middleware(GitHubGraphQlClient.GitHubGraphQlAuth);
 
@@ -223,9 +226,17 @@ export const make = Effect.gen(function* () {
 
     getIssue: Effect.fn("GitHubIssueTracker.getIssue")(function* (input) {
       const { owner, name, number } = yield* issue(input, "getIssue");
-      const result = yield* client
-        .IssueDetail({ owner, name, number })
-        .pipe(graphql(input.host, "getIssue"));
+      const [result, relatedIssues] = yield* Effect.all(
+        [
+          client.IssueDetail({ owner, name, number }).pipe(graphql(input.host, "getIssue")),
+          client.IssueRelations({ owner, name, number }).pipe(
+            graphql(input.host, "getIssue"),
+            Effect.map((found) => toIssueRelations(`${owner}/${name}`, found)),
+            Effect.orElseSucceed(() => undefined),
+          ),
+        ],
+        { concurrency: 2 },
+      );
       const detail = toIssueDetail(result);
       const raw = result.repository?.issue;
       if (detail === null || raw == null) return yield* notFound("getIssue");
@@ -279,7 +290,12 @@ export const make = Effect.gen(function* () {
           );
         }
       }
-      return { ...detail, labels: allLabels, assignees: allAssignees };
+      return {
+        ...detail,
+        labels: allLabels,
+        assignees: allAssignees,
+        ...(relatedIssues === undefined ? {} : { relatedIssues }),
+      };
     }),
 
     getComments: (input) =>

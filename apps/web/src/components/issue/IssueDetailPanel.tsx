@@ -57,6 +57,7 @@ import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { DraftId } from "~/composerDraftStore";
 import { IssueThreadActions } from "./IssueThreadActions";
+import { IssueRelationsSection } from "./IssueRelationsSection";
 import { PullRequestCandidatePicker } from "../pullRequest/PullRequestCandidatePicker";
 import { PullRequestCommentBody } from "../pullRequest/PullRequestCommentBody";
 import { PullRequestDetailTitleRow } from "../pullRequest/PullRequestDetailLayout";
@@ -818,6 +819,15 @@ export function IssueDetailPanel({
             ) : null}
           </div>
         </PullRequestSection>
+
+        {detail.relatedIssues ? (
+          <IssueRelationsSection
+            relations={detail.relatedIssues}
+            environmentId={environmentId}
+            threadRef={threadRef}
+            issueUrl={detail.url}
+          />
+        ) : null}
 
         {detail.linkedPullRequests.length > 0 ? (
           <PullRequestSection key={`linked:${detail.url}`} title="Linked pull requests">

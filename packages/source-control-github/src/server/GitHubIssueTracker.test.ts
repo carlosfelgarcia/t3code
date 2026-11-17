@@ -165,14 +165,36 @@ function transport(httpClient: HttpClient.HttpClient) {
   );
 }
 
-function tracker(onRequest: (variables: unknown) => void, templateRepository?: unknown) {
+// An older Enterprise server has no sub-issue or dependency fields, so the query fails there.
+const NO_RELATIONS_RESPONSE = JSON.stringify({
+  errors: [{ message: "Field 'subIssues' doesn't exist on type 'Issue'" }],
+});
+
+function tracker(
+  onRequest: (variables: unknown) => void,
+  templateRepository?: unknown,
+  relationsIssue?: unknown,
+) {
   return GitHubIssueTracker.make.pipe(
     Effect.provide(
       transport(
         HttpClient.make((request) => {
           if (request.body._tag !== "Uint8Array")
             return Effect.die("Expected a GraphQL JSON request.");
-          const { variables } = decodeVariables(new TextDecoder().decode(request.body.body));
+          const { query, variables } = decodeVariables(new TextDecoder().decode(request.body.body));
+          if (query.includes("query IssueRelations")) {
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                new Response(
+                  relationsIssue === undefined
+                    ? NO_RELATIONS_RESPONSE
+                    : JSON.stringify({ data: { repository: { issue: relationsIssue } } }),
+                  { headers: { "content-type": "application/json" } },
+                ),
+              ),
+            );
+          }
           onRequest(variables);
           const body =
             templateRepository !== undefined
@@ -533,9 +555,32 @@ Redact secrets before uploading.`);
   it.effect("maps a detail read to the neutral issue shape", () =>
     Effect.gen(function* () {
       const seen: unknown[] = [];
-      const api = yield* tracker((variables) => {
-        seen.push(variables);
+      const node = (
+        number: number,
+        nameWithOwner: string,
+        state = "OPEN",
+        stateReason: string | null = null,
+      ) => ({
+        number,
+        title: `Issue ${number}`,
+        url: `https://github.com/${nameWithOwner}/issues/${number}`,
+        state,
+        stateReason,
+        repository: { nameWithOwner },
       });
+      const api = yield* tracker(
+        (variables) => {
+          seen.push(variables);
+        },
+        undefined,
+        {
+          parent: node(7, "acme/web"),
+          subIssuesSummary: { total: 3, completed: 1 },
+          subIssues: { nodes: [node(43, "acme/web", "CLOSED", "COMPLETED"), null] },
+          blockedBy: { nodes: [node(9, "acme/api")] },
+          blocking: { nodes: [] },
+        },
+      );
       const issue = yield* api.getIssue({
         cwd: "/w",
         host: "github.com",
@@ -608,6 +653,49 @@ Redact secrets before uploading.`);
         ["referenced", "acme/web#50"],
         ["closed", null],
       ]);
+      // A blocker in another repository is named with its repository.
+      expect(issue.relatedIssues).toEqual({
+        parent: {
+          scope: "acme/web",
+          key: "7",
+          displayKey: "#7",
+          title: "Issue 7",
+          url: "https://github.com/acme/web/issues/7",
+          state: { category: "open", name: "Open" },
+        },
+        subIssues: [
+          {
+            scope: "acme/web",
+            key: "43",
+            displayKey: "#43",
+            title: "Issue 43",
+            url: "https://github.com/acme/web/issues/43",
+            state: { category: "closed", name: "Completed", closeReason: "completed" },
+          },
+        ],
+        subIssuesTotal: 3,
+        subIssuesCompleted: 1,
+        blockedBy: [
+          {
+            scope: "acme/api",
+            key: "9",
+            displayKey: "acme/api#9",
+            title: "Issue 9",
+            url: "https://github.com/acme/api/issues/9",
+            state: { category: "open", name: "Open" },
+          },
+        ],
+        blocking: [],
+      });
+
+      const withoutRelations = yield* (yield* tracker(() => undefined)).getIssue({
+        cwd: "/w",
+        host: "github.com",
+        scope: "acme/web",
+        key: "42",
+      });
+      expect(withoutRelations.title).toBe("Composer loses focus");
+      expect(withoutRelations.relatedIssues).toBeUndefined();
     }),
   );
 });

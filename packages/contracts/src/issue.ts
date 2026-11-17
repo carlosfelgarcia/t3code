@@ -210,6 +210,29 @@ export const IssueViewerPermissions = Schema.Struct({
 });
 export type IssueViewerPermissions = typeof IssueViewerPermissions.Type;
 
+/** Another issue on the same tracker that this one is tied to, as the tracker records it. */
+export const IssueRelation = Schema.Struct({
+  scope: TrimmedNonEmptyString,
+  key: TrimmedNonEmptyString,
+  displayKey: TrimmedNonEmptyString,
+  title: Schema.String,
+  url: TrimmedNonEmptyString,
+  state: IssueState,
+});
+export type IssueRelation = typeof IssueRelation.Type;
+
+/** Sub-issues, parent issue and blockers. Only trackers that record them fill this in. */
+export const IssueRelations = Schema.Struct({
+  parent: Schema.NullOr(IssueRelation),
+  subIssues: Schema.Array(IssueRelation),
+  /** Counts over every sub-issue, which can be more than `subIssues` lists. */
+  subIssuesTotal: NonNegativeInt,
+  subIssuesCompleted: NonNegativeInt,
+  blockedBy: Schema.Array(IssueRelation),
+  blocking: Schema.Array(IssueRelation),
+});
+export type IssueRelations = typeof IssueRelations.Type;
+
 export const IssueDetail = Schema.Struct({
   ...IssueSummary.fields,
   projectId: ProjectId,
@@ -232,6 +255,7 @@ export const IssueDetail = Schema.Struct({
   commentsCursor: Schema.NullOr(TrimmedNonEmptyString),
   events: Schema.Array(IssueEvent),
   linkedPullRequests: Schema.Array(IssueLinkedPullRequest),
+  relatedIssues: Schema.optional(IssueRelations),
 });
 export type IssueDetail = typeof IssueDetail.Type;
 
