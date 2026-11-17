@@ -298,53 +298,6 @@ apps connected to that server, but the host's own site will not show them, and t
 On mobile, open a changed file and mark it viewed from its header. Viewed files collapse,
 and their marks follow the same rules as on web and desktop.
 
-## Issues
-
-Issues opens in a thread's right panel: choose **Issues** in the thread's details card, **Open
-Issues in panel** in the command palette, or right-click a thread and choose **Open issues**. It
-lists the GitHub issues of the thread's project, read with that project's environment and its
-GitHub credentials. A fork opens on your own repository, with a filter to switch to its upstream;
-if your fork has Issues turned off, the tab says so and offers the upstream instead. Issues
-currently support GitHub only. Filter by state, label, and issue author (who opened the issue), or
-search titles. The tab remembers the issue you opened when you switch tabs or reload.
-
-The author menu lists the GitHub accounts signed in to `gh` on the environment that reads the
-list, active or not. To add a second account, run `gh auth login` for it, then
-`gh auth switch` back to the account that machine normally uses.
-
-Issues opens filtered to the active `gh` account on the environment that reads the list, or lists
-all authors and says so when no active account is signed in there. Change
-that in **Settings → Source control → Default issue author**: the active account, a fixed login, or
-all authors. Each environment keeps its own default, and an author picked in the tab lasts while
-the tab shows. An environment running an older T3 Code cannot filter by author; Issues says so
-instead of listing everyone.
-
-Open an issue to read its description and comments. You can add and remove labels; if GitHub
-refuses the change, the label goes back and T3 Code says why. **Close issue** and **Reopen issue**
-sit beside its state, and in the menu when you right-click it in the list. A closed issue can stay
-in the Open list for a moment, marked closed, until GitHub's search catches up. **Start thread**
-opens a draft in the issue's project with the issue's number, title, and link in the composer. Nothing is sent until
-you send it, and the agent reads the rest of the issue itself. **Add to composer** puts the same
-in the composer of the thread whose panel you are in. Issues are web and desktop only.
-
-The list shows the newest issues first, in issue-number order within a repository. To label
-several issues at once, select them with their checkboxes, Ctrl/Cmd-click, or Shift-click for a
-range, then use **Labels**. Clicking a label that is on every
-selected issue takes it off all of them; any other label goes on all of them. Select all (or
-Ctrl/Cmd+A in the list) covers only the issues loaded so far, and changing a filter clears the
-selection. A selection across repositories offers only the labels they all have. Right-click an
-issue to start a thread from it, copy its link, or open it on GitHub.
-
-An issue with open blockers is marked in the list with the blocking issues' numbers; hover the
-mark for their titles. An opened issue lists what it is blocked by and what it is blocking, including
-closed ones, and selecting one opens it. Blockers are set on GitHub. GitHub Enterprise Server
-versions without issue dependencies show neither.
-
-An opened issue lists its sub-issues in their order on GitHub, and a sub-issue links to its
-parent issue; the list shows how many of an issue's sub-issues are completed. Sub-issues are set on
-GitHub. **Close issue** closes an issue as completed; to close one as not planned or as a
-duplicate, use GitHub.
-
 ## Git Tree
 
 **Git Tree** in a thread's details card, **Open Git Tree in panel** in the command palette, or
@@ -390,6 +343,9 @@ parent folder, turn on **List sibling repositories** under **Settings → Source
 Repositories** for that project. A thread's Issues and Git Tree tabs then get a repository picker
 listing the project's own repository and each Git repository beside it. Each tab keeps its own
 choice. Repositories that are not cloned there do not appear.
+
+Issues are read through a project, so picking a sibling repository that is not a project yet
+offers **Add as project**, which adds it to the sidebar and lists its issues.
 
 Git Tree on a sibling repository acts on that clone directly, on whatever branch it has checked
 out. **Clean Repo** and **New thread** are available only when the sibling repository is also a
@@ -478,6 +434,28 @@ undoes it. Linked issues are listed in the thread's details beside its pull requ
 issues they work on with the `link_issue` tool.
 
 Writing to a tracker over a remote connection requires the `source-control:write` scope.
+
+### Issues in a thread's panel
+
+A thread can also list its project's issues in its right panel: choose **Issues** in the thread's
+details card, **Open Issues in panel** in the command palette, or right-click the thread and
+choose **Open issues**. The tab opens on open issues, newest first, and remembers its filters for
+that thread. Selecting an issue opens it in the same panel.
+
+Right-click an issue to start a thread from it, add it to the composer, link it to the thread,
+copy its link, or open it on the tracker. **Start thread** opens a draft in the issue's project with
+the issue's key, title, and link in the composer. The issue is linked to the new thread when you
+send its first message. **Start thread** and **Add to composer** are also in an opened issue's
+header.
+
+To label several issues at once, select them with their checkboxes, Cmd/Ctrl-click, or Shift-click
+for a range, then use **Labels**. A label already on every selected issue comes off all of them;
+any other label goes on all of them. Select all, or Cmd/Ctrl+A in the list, covers only the issues
+loaded so far, and changing a filter clears the selection.
+
+An opened GitHub issue lists its parent issue, its sub-issues with how many are completed, and
+what it is blocked by and blocking. Select one to open it. GitHub Enterprise Server versions
+without sub-issues or issue dependencies show none.
 
 ## GitHub stacks
 
