@@ -53,6 +53,11 @@ interface RightPanelPullRequestProps {
   readonly onBack: (() => void) | undefined;
 }
 
+interface RightPanelDiffProps {
+  readonly projectId: ProjectId;
+  readonly worktreePath: string | null;
+}
+
 interface RightPanelFileProps {
   readonly projectId?: ProjectId | undefined;
   readonly projectName: string | null;
@@ -81,6 +86,7 @@ export function RightPanelSurfaceContent(props: {
   readonly onCloseSurface: (surface: RightPanelSurface) => void;
   readonly terminal: RightPanelTerminalProps;
   readonly pullRequest: RightPanelPullRequestProps;
+  readonly diff: RightPanelDiffProps;
   readonly issuesSupported: boolean;
   readonly files: RightPanelFileProps;
   readonly sideChatParentPanel: SideChatParentPanel;
@@ -116,6 +122,9 @@ export function RightPanelSurfaceContent(props: {
           <DiffPanel
             key={scopedThreadKey(threadRef)}
             mode="embedded"
+            threadRef={threadRef}
+            projectId={props.diff.projectId}
+            worktreePath={props.diff.worktreePath}
             composerDraftTarget={props.composerDraftTarget}
             workspaceMutationId={props.workspaceMutationId}
             visible={visible}
