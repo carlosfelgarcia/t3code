@@ -1,4 +1,4 @@
-import type { IssueRelation, IssueRelations } from "@t3tools/contracts";
+import type { IssueRelation, IssueRelationSummary, IssueRelations } from "@t3tools/contracts";
 
 import type * as Relations from "./issueRelations.graphql.ts";
 import { toIssueState } from "./gitHubIssueJson.ts";
@@ -36,4 +36,26 @@ export function toIssueRelations(
     blockedBy: nodesOf(scope, issue.blockedBy),
     blocking: nodesOf(scope, issue.blocking),
   };
+}
+
+/** By node id, and only for rows with sub-issues or an open blocker to show. */
+export function toIssueRelationSummaries(
+  scope: string,
+  result: Relations.IssueRowRelations.Result,
+): ReadonlyMap<string, IssueRelationSummary> {
+  const summaries = new Map<string, IssueRelationSummary>();
+  for (const node of result.nodes) {
+    if (node === null || node.__typename !== "Issue") continue;
+    const openBlockers = nodesOf(scope, node.blockedBy).filter(
+      (blocker) => blocker.state.category === "open",
+    );
+    const summary = {
+      subIssuesTotal: node.subIssuesSummary.total,
+      subIssuesCompleted: node.subIssuesSummary.completed,
+      openBlockerCount: Math.max(node.issueDependenciesSummary.blockedBy, openBlockers.length),
+      openBlockers,
+    };
+    if (summary.subIssuesTotal > 0 || summary.openBlockerCount > 0) summaries.set(node.id, summary);
+  }
+  return summaries;
 }

@@ -38,3 +38,24 @@ query IssueRelations($owner: String!, $name: String!, $number: Int!) {
     }
   }
 }
+
+# The relations each row of one list page shows, read in one request after the search.
+query IssueRowRelations($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    ... on Issue {
+      id
+      subIssuesSummary {
+        total
+        completed
+      }
+      issueDependenciesSummary {
+        blockedBy
+      }
+      blockedBy(first: 10) {
+        nodes {
+          ...IssueRelationNode
+        }
+      }
+    }
+  }
+}

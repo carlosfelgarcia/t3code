@@ -454,7 +454,8 @@ any other label goes on all of them. Select all, or Cmd/Ctrl+A in the list, cove
 loaded so far, and changing a filter clears the selection.
 
 An opened GitHub issue lists its parent issue, its sub-issues with how many are completed, and
-what it is blocked by and blocking. Select one to open it. GitHub Enterprise Server versions
+what it is blocked by and blocking. Select one to open it. In the issue list, a row names the open
+issues blocking it and shows its sub-issue progress. GitHub Enterprise Server versions
 without sub-issues or issue dependencies show none.
 
 ## GitHub stacks

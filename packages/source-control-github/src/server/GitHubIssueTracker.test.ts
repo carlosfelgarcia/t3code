@@ -432,6 +432,132 @@ describe("GitHubIssueTracker", () => {
     }),
   );
 
+  it.effect("gives list rows their sub-issue progress and open blockers when GitHub has them", () =>
+    Effect.gen(function* () {
+      const searchRow = (id: string, number: number) => ({
+        __typename: "Issue",
+        id,
+        number,
+        title: `Issue ${number}`,
+        url: `https://github.com/acme/web/issues/${number}`,
+        state: "OPEN",
+        stateReason: null,
+        createdAt: "2026-07-01T00:00:00Z",
+        updatedAt: "2026-07-01T00:00:00Z",
+        closedAt: null,
+        author: null,
+        assignees: { nodes: [] },
+        labels: { nodes: [] },
+        comments: { totalCount: 0 },
+      });
+      const blocker = (number: number, state: string) => ({
+        number,
+        title: `Issue ${number}`,
+        url: `https://github.com/acme/api/issues/${number}`,
+        state,
+        stateReason: state === "CLOSED" ? "COMPLETED" : null,
+        repository: { nameWithOwner: "acme/api" },
+      });
+      const listing = (withRelations: boolean) => {
+        const relationIds: unknown[] = [];
+        const http = HttpClient.make((request) => {
+          if (request.body._tag !== "Uint8Array") return Effect.die("Expected a JSON request.");
+          const { query, variables } = decodeVariables(new TextDecoder().decode(request.body.body));
+          let body: unknown;
+          if (query.includes("query IssueRowRelations")) {
+            relationIds.push(variables.ids);
+            body = withRelations
+              ? {
+                  data: {
+                    nodes: [
+                      {
+                        __typename: "Issue",
+                        id: "I_42",
+                        subIssuesSummary: { total: 3, completed: 1 },
+                        issueDependenciesSummary: { blockedBy: 2 },
+                        blockedBy: { nodes: [blocker(9, "OPEN"), blocker(8, "CLOSED")] },
+                      },
+                      {
+                        __typename: "Issue",
+                        id: "I_43",
+                        subIssuesSummary: { total: 0, completed: 0 },
+                        issueDependenciesSummary: { blockedBy: 0 },
+                        blockedBy: { nodes: [] },
+                      },
+                    ],
+                  },
+                }
+              : JSON.parse(NO_RELATIONS_RESPONSE);
+          } else if (query.includes("query IssueSearch")) {
+            body = {
+              data: {
+                search: {
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                  nodes: [searchRow("I_42", 42), searchRow("I_43", 43)],
+                },
+              },
+            };
+          } else {
+            body = { data: { viewer: { login: "julius" } } };
+          }
+          return Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              new Response(JSON.stringify(body), {
+                headers: { "content-type": "application/json" },
+              }),
+            ),
+          );
+        });
+        return GitHubIssueTracker.make.pipe(
+          Effect.provide(transport(http)),
+          Effect.flatMap((api) =>
+            api.listIssues({
+              cwd: "/w",
+              host: "github.com",
+              scope: "acme/web",
+              state: "open",
+              involvement: "all",
+              viewer: "julius",
+              sort: "updated",
+              limit: 10,
+            }),
+          ),
+          Effect.map((page) => ({ page, relationIds })),
+        );
+      };
+
+      const { page, relationIds } = yield* listing(true);
+      expect(relationIds).toEqual([["I_42", "I_43"]]);
+      // A closed blocker is not named; a row with nothing to show carries no summary.
+      expect(page.items.map((item) => [item.key, item.relationSummary])).toEqual([
+        [
+          "42",
+          {
+            subIssuesTotal: 3,
+            subIssuesCompleted: 1,
+            openBlockerCount: 2,
+            openBlockers: [
+              {
+                scope: "acme/api",
+                key: "9",
+                displayKey: "acme/api#9",
+                title: "Issue 9",
+                url: "https://github.com/acme/api/issues/9",
+                state: { category: "open", name: "Open" },
+              },
+            ],
+          },
+        ],
+        ["43", undefined],
+      ]);
+
+      const older = yield* listing(false);
+      expect(older.page.items.map((item) => item.key)).toEqual(["42", "43"]);
+      expect(older.page.items.every((item) => item.relationSummary === undefined)).toBe(true);
+    }),
+  );
+
   it.effect("offers YAML issue forms when blank issues are disabled", () =>
     Effect.gen(function* () {
       const form = {

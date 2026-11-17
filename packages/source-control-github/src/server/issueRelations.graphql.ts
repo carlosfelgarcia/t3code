@@ -48,7 +48,7 @@ export const IssueConnection = Schema.Struct({
 export interface IssueConnection extends Schema.Struct.Type<typeof IssueConnection.fields> {}
 
 /** An Issue is a place to discuss ideas, enhancements, tasks, and bugs for a project. */
-export const Issue = Schema.Struct({
+export const IssueIssue = Schema.Struct({
   /** The parent entity of the issue. */
   parent: Schema.NullOr(IssueRelationNode),
   /** Summary of the state of an issue's sub-issues */
@@ -60,12 +60,12 @@ export const Issue = Schema.Struct({
   /** A list of issues that this issue is blocking. */
   blocking: IssueConnection
 })
-export interface Issue extends Schema.Struct.Type<typeof Issue.fields> {}
+export interface IssueIssue extends Schema.Struct.Type<typeof IssueIssue.fields> {}
 
 /** A repository contains the content for a project. */
 export const IssueRelationsRepositoryRepository = Schema.Struct({
   /** Returns a single issue from the current repository by number. */
-  issue: Schema.NullOr(Issue)
+  issue: Schema.NullOr(IssueIssue)
 })
 export interface IssueRelationsRepositoryRepository extends Schema.Struct.Type<typeof IssueRelationsRepositoryRepository.fields> {}
 
@@ -99,5 +99,61 @@ export declare namespace IssueRelations {
   export type Result = typeof IssueRelations.result.Type
 }
 
+/** Summary of the state of an issue's dependencies */
+export const IssueDependenciesSummary = Schema.Struct({
+  /** Count of issues this issue is blocked by */
+  blockedBy: Shared.Int
+})
+export interface IssueDependenciesSummary extends Schema.Struct.Type<typeof IssueDependenciesSummary.fields> {}
+
+/** An Issue is a place to discuss ideas, enhancements, tasks, and bugs for a project. */
+export const NodesIssue = Schema.Struct({
+  __typename: Schema.Literal("Issue"),
+  /** The Node ID of the Issue object */
+  id: Shared.ID,
+  /** Summary of the state of an issue's sub-issues */
+  subIssuesSummary: SubIssuesSummary,
+  /** Summary of the state of an issue's dependencies */
+  issueDependenciesSummary: IssueDependenciesSummary,
+  /** A list of issues that are blocking this issue. */
+  blockedBy: IssueConnection
+})
+export interface NodesIssue extends Schema.Struct.Type<typeof NodesIssue.fields> {}
+
+/** An object with an ID. */
+export const NodeOther = Schema.Struct({
+  __typename: GraphQL.otherTypename<Shared.Typename.Node>()(["Issue"])
+})
+export interface NodeOther extends Schema.Struct.Type<typeof NodeOther.fields> {}
+
+/** `query IssueRowRelations` */
+export const IssueRowRelations = GraphQL.query("IssueRowRelations", {
+  document: {
+    variables: [
+      { name: "ids", body: "[ID!]!" }
+    ],
+    selections: [
+      { name: "nodes", body: ["(ids:$", "ids", "){__typename...on Issue{id subIssuesSummary{total completed}issueDependenciesSummary{blockedBy}blockedBy(first:10){nodes{...IssueRelationNode}}}}"] }
+    ],
+    fragments: [
+      { name: "IssueRelationNode", body: ["on Issue{number title url state stateReason repository{nameWithOwner}}"] }
+    ]
+  },
+  variables: {
+    ids: Schema.Array(Shared.ID)
+  },
+  result: Schema.Struct({
+    /** Lookup nodes by a list of IDs. */
+    nodes: Schema.Array(Schema.NullOr(Schema.Union([
+      NodesIssue,
+      NodeOther
+    ])))
+  })
+})
+export declare namespace IssueRowRelations {
+  export type Variables = typeof IssueRowRelations.variables.Type
+  export type Result = typeof IssueRowRelations.result.Type
+}
+
 /** Every operation in issueRelations.graphql. */
-export const IssueRelationsGraphQLGroup = GraphQLGroup.make(IssueRelations)
+export const IssueRelationsGraphQLGroup = GraphQLGroup.make(IssueRelations, IssueRowRelations)

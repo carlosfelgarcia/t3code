@@ -8,6 +8,7 @@ import type {
   IssueEventKind,
   IssueLabel,
   IssueLinkedPullRequest,
+  IssueRelationSummary,
   IssueState,
   IssueTemplate,
   IssueViewerPermissions,
@@ -88,7 +89,7 @@ export function toIssueState(
   return reason === "DUPLICATE" ? DUPLICATE : { category: "closed", name: "Closed" };
 }
 
-function toSummary(raw: Omit<Issues.NodesIssue, "__typename">): TrackerIssueSummary {
+function toSummary(raw: Omit<Issues.NodesIssue, "__typename" | "id">): TrackerIssueSummary {
   return {
     key: String(raw.number),
     displayKey: `#${raw.number}`,
@@ -291,11 +292,17 @@ export function toIssueDetail({
   };
 }
 
-export function toIssueSearch({ search }: Issues.IssueSearch.Result) {
+export function toIssueSearch(
+  { search }: Issues.IssueSearch.Result,
+  relationSummaries: ReadonlyMap<string, IssueRelationSummary>,
+) {
   return {
-    items: (search.nodes ?? []).flatMap((node) =>
-      node !== null && node.__typename === "Issue" ? [toSummary(node)] : [],
-    ),
+    items: (search.nodes ?? []).flatMap((node) => {
+      if (node === null || node.__typename !== "Issue") return [];
+      const relationSummary = relationSummaries.get(node.id);
+      const summary = toSummary(node);
+      return [relationSummary === undefined ? summary : { ...summary, relationSummary }];
+    }),
     nextCursor: search.pageInfo.hasNextPage ? search.pageInfo.endCursor : null,
   };
 }

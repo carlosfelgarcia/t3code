@@ -16,7 +16,7 @@ import * as GitHubRest from "./GitHubRest.ts";
 import { readIssueTemplates } from "./gitHubIssueTemplates.ts";
 import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
 import * as GitHubGraphQlClient from "./gitHubGraphQlClient.ts";
-import { toIssueRelations } from "./gitHubIssueRelations.ts";
+import { toIssueRelationSummaries, toIssueRelations } from "./gitHubIssueRelations.ts";
 import { IssueRelationsGraphQLGroup } from "./issueRelations.graphql.ts";
 import { IssuesGraphQLGroup } from "./issues.graphql.ts";
 import { AddReaction, RemoveReaction } from "./pullRequestMutations.graphql.ts";
@@ -211,18 +211,28 @@ export const make = Effect.gen(function* () {
         Effect.map(({ viewer }) => viewer.login),
       ),
 
-    listIssues: (input) =>
-      repository(input.scope, "listIssues").pipe(
-        Effect.flatMap(() =>
-          client
-            .IssueSearch({
-              q: searchQuery(input),
-              cursor: input.cursor,
-              rows: Math.min(Math.max(Math.trunc(input.limit), 1), 100),
-            })
-            .pipe(graphql(input.host, "listIssues"), Effect.map(toIssueSearch)),
-        ),
-      ),
+    listIssues: Effect.fn("GitHubIssueTracker.listIssues")(function* (input) {
+      yield* repository(input.scope, "listIssues");
+      const result = yield* client
+        .IssueSearch({
+          q: searchQuery(input),
+          cursor: input.cursor,
+          rows: Math.min(Math.max(Math.trunc(input.limit), 1), 100),
+        })
+        .pipe(graphql(input.host, "listIssues"));
+      const ids = (result.search.nodes ?? []).flatMap((node) =>
+        node?.__typename === "Issue" ? [node.id] : [],
+      );
+      const relationSummaries =
+        ids.length === 0
+          ? new Map()
+          : yield* client.IssueRowRelations({ ids }).pipe(
+              graphql(input.host, "listIssues"),
+              Effect.map((found) => toIssueRelationSummaries(input.scope, found)),
+              Effect.orElseSucceed(() => new Map()),
+            );
+      return toIssueSearch(result, relationSummaries);
+    }),
 
     getIssue: Effect.fn("GitHubIssueTracker.getIssue")(function* (input) {
       const { owner, name, number } = yield* issue(input, "getIssue");

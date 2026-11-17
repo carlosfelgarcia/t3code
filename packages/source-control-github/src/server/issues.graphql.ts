@@ -108,6 +108,8 @@ export interface NodesCommentsIssueCommentConnection extends Schema.Struct.Type<
 /** An Issue is a place to discuss ideas, enhancements, tasks, and bugs for a project. */
 export const NodesIssue = Schema.Struct({
   __typename: Schema.Literal("Issue"),
+  /** The Node ID of the Issue object */
+  id: Shared.ID,
   ...IssueRow.fields,
   /** A list of Users assigned to this object. */
   assignees: NodesAssigneesUserConnection,
@@ -149,7 +151,7 @@ export const IssueSearch = GraphQL.query("IssueSearch", {
       { name: "rows", body: "Int!" }
     ],
     selections: [
-      { name: "search", body: ["(query:$", "q", " type:ISSUE first:$", "rows", " after:$", "cursor", "){pageInfo{hasNextPage endCursor}nodes{__typename...on Issue{...IssueRow assignees(first:20){nodes{login name avatarUrl}}labels(first:20){nodes{name color}}comments{totalCount}}}}"] }
+      { name: "search", body: ["(query:$", "q", " type:ISSUE first:$", "rows", " after:$", "cursor", "){pageInfo{hasNextPage endCursor}nodes{__typename...on Issue{id...IssueRow assignees(first:20){nodes{login name avatarUrl}}labels(first:20){nodes{name color}}comments{totalCount}}}}"] }
     ],
     fragments: [
       { name: "IssueRow", body: ["on Issue{number title url state stateReason createdAt updatedAt closedAt author{__typename login avatarUrl...on User{name}}}"] }

@@ -1,5 +1,6 @@
 import type { EnvironmentIssueEntry } from "@t3tools/client-runtime/issue-list";
-import { MessageSquareIcon } from "lucide-react";
+import type { IssueRelationSummary } from "@t3tools/contracts";
+import { BanIcon, ListChecksIcon, MessageSquareIcon } from "lucide-react";
 import { memo } from "react";
 
 import { cn } from "~/lib/utils";
@@ -14,6 +15,7 @@ import {
   PullRequestLabelChip,
   PullRequestActorAvatar,
 } from "../pullRequest/pullRequestPresentation";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { IssueStateGlyph, issueTrackerPresentation } from "./issuePresentation";
 
 export type IssueRowTarget = Pick<
@@ -82,6 +84,7 @@ function IssueRowImpl({
           meta={
             <>
               <PullRequestRowAuthor actor={entry.author} />
+              {entry.relationSummary ? <IssueRowRelations summary={entry.relationSummary} /> : null}
               {showTracker ? (
                 <span className="inline-flex shrink-0 items-center gap-1">
                   <tracker.Icon aria-hidden className="size-3" />
@@ -111,3 +114,57 @@ function IssueRowImpl({
 }
 
 export const IssueRow = memo(IssueRowImpl);
+
+const ROW_BLOCKERS_SHOWN = 3;
+
+function IssueRowRelations({ summary }: { summary: IssueRelationSummary }) {
+  const count = summary.openBlockerCount;
+  const named = summary.openBlockers.slice(0, ROW_BLOCKERS_SHOWN);
+  const hidden = count - named.length;
+  return (
+    <>
+      {count > 0 ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={<span className="inline-flex min-w-0 shrink items-center gap-1" />}
+          >
+            <BanIcon aria-hidden className="size-3 shrink-0" />
+            <span className="truncate">
+              {named.length === 0
+                ? `Blocked by ${count} ${count === 1 ? "issue" : "issues"}`
+                : `Blocked by ${named.map((blocker) => blocker.displayKey).join(", ")}${hidden > 0 ? ` +${hidden}` : ""}`}
+            </span>
+          </TooltipTrigger>
+          <TooltipPopup>
+            {summary.openBlockers.map((blocker) => (
+              <div key={blocker.url}>
+                {blocker.displayKey} {blocker.title}
+              </div>
+            ))}
+            {count > summary.openBlockers.length ? (
+              <div>
+                {summary.openBlockers.length === 0
+                  ? `${count} open ${count === 1 ? "issue" : "issues"}`
+                  : `and ${count - summary.openBlockers.length} more`}
+              </div>
+            ) : null}
+          </TooltipPopup>
+        </Tooltip>
+      ) : null}
+      {summary.subIssuesTotal > 0 ? (
+        <Tooltip>
+          <TooltipTrigger render={<span className="inline-flex shrink-0 items-center gap-1" />}>
+            <ListChecksIcon aria-hidden className="size-3 shrink-0" />
+            <span className="tabular-nums">
+              {summary.subIssuesCompleted}/{summary.subIssuesTotal}
+            </span>
+          </TooltipTrigger>
+          <TooltipPopup>
+            {summary.subIssuesCompleted} of {summary.subIssuesTotal}{" "}
+            {summary.subIssuesTotal === 1 ? "sub-issue" : "sub-issues"} completed
+          </TooltipPopup>
+        </Tooltip>
+      ) : null}
+    </>
+  );
+}

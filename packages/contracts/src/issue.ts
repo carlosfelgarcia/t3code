@@ -92,6 +92,27 @@ export const IssueScopeRef = Schema.Struct({
 });
 export type IssueScopeRef = typeof IssueScopeRef.Type;
 
+/** Another issue on the same tracker that this one is tied to, as the tracker records it. */
+export const IssueRelation = Schema.Struct({
+  scope: TrimmedNonEmptyString,
+  key: TrimmedNonEmptyString,
+  displayKey: TrimmedNonEmptyString,
+  title: Schema.String,
+  url: TrimmedNonEmptyString,
+  state: IssueState,
+});
+export type IssueRelation = typeof IssueRelation.Type;
+
+/** What a list row shows of an issue's relations, when its tracker records them. */
+export const IssueRelationSummary = Schema.Struct({
+  subIssuesTotal: NonNegativeInt,
+  subIssuesCompleted: NonNegativeInt,
+  /** Counts every open blocker, which can be more than `openBlockers` names. */
+  openBlockerCount: NonNegativeInt,
+  openBlockers: Schema.Array(IssueRelation),
+});
+export type IssueRelationSummary = typeof IssueRelationSummary.Type;
+
 /** One row of a listing. Carries everything a list needs and nothing a detail needs. */
 export const IssueSummary = Schema.Struct({
   tracker: IssueTrackerKind,
@@ -110,6 +131,7 @@ export const IssueSummary = Schema.Struct({
   assignees: Schema.Array(IssueActor),
   labels: Schema.Array(IssueLabel),
   commentCount: NonNegativeInt,
+  relationSummary: Schema.optional(IssueRelationSummary),
 });
 export type IssueSummary = typeof IssueSummary.Type;
 
@@ -209,17 +231,6 @@ export const IssueViewerPermissions = Schema.Struct({
   assignees: Schema.Boolean,
 });
 export type IssueViewerPermissions = typeof IssueViewerPermissions.Type;
-
-/** Another issue on the same tracker that this one is tied to, as the tracker records it. */
-export const IssueRelation = Schema.Struct({
-  scope: TrimmedNonEmptyString,
-  key: TrimmedNonEmptyString,
-  displayKey: TrimmedNonEmptyString,
-  title: Schema.String,
-  url: TrimmedNonEmptyString,
-  state: IssueState,
-});
-export type IssueRelation = typeof IssueRelation.Type;
 
 /** Sub-issues, parent issue and blockers. Only trackers that record them fill this in. */
 export const IssueRelations = Schema.Struct({
