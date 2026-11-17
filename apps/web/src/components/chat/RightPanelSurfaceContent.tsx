@@ -200,6 +200,7 @@ export function RightPanelSurfaceContent(props: {
             key: surface.key,
           }}
           threadRef={threadRef}
+          composerDraftTarget={props.composerDraftTarget}
           onSelectPullRequest={(reference) => {
             useRightPanelStore.getState().openPullRequest(threadRef, {
               projectId: reference.projectId,
@@ -218,6 +219,7 @@ export function RightPanelSurfaceContent(props: {
           threadRef={threadRef}
           projectId={props.files.projectId}
           surface={surface}
+          composerDraftTarget={props.composerDraftTarget}
         />
       );
     case "git-tree":

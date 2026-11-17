@@ -12,16 +12,20 @@ import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import { inferProjectTitleFromPath } from "@t3tools/client-runtime/state/projects";
 import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { issueEntryKey } from "@t3tools/client-runtime/state/issues";
-import type {
-  EnvironmentId,
-  IssueInvolvement,
-  IssueListInput,
-  IssueListState,
-  IssueListSort,
-  ProjectId,
-  ScopedThreadRef,
-  SiblingRepository,
+import {
+  AuthOrchestrationOperateScope,
+  threadIssueKeysEqual,
+  type ContextMenuItem,
+  type EnvironmentId,
+  type IssueInvolvement,
+  type IssueListInput,
+  type IssueListState,
+  type IssueListSort,
+  type ProjectId,
+  type ScopedThreadRef,
+  type SiblingRepository,
 } from "@t3tools/contracts";
+import type { EnvironmentIssueEntry } from "@t3tools/client-runtime/issue-list";
 import {
   ArrowDownUpIcon,
   AtSignIcon,
@@ -54,22 +58,29 @@ import {
   EmptyTitle,
 } from "~/components/ui/empty";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
+import type { DraftId } from "~/composerDraftStore";
+import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
+import { readLocalApi } from "~/localApi";
 import { newProjectId } from "~/lib/utils";
 import {
   type IssuesPanelSurface,
   selectActiveRightPanelSurface,
   useRightPanelStore,
 } from "~/rightPanelStore";
-import { useProject, useProjects } from "~/state/entities";
+import { useProject, useProjects, useThreadShell } from "~/state/entities";
 import { useEnvironment } from "~/state/environments";
 import { issueEnvironment, useIssueList } from "~/state/issues";
 import { projectEnvironment } from "~/state/projects";
 import { useDebouncedValue } from "~/state/queries";
+import { useEnvironmentScope } from "~/state/session";
+import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { SiblingRepositoryPicker, useSiblingSelection } from "../SiblingRepositoryPicker";
+import { toastManager } from "../ui/toast";
 import { IssueFiltersMenu } from "./IssueListFilterPickers";
+import { addIssueToComposer, useStartIssueThread } from "./issueThreads";
 
 const STATE_OPTIONS = [
   { value: "open", label: "Open", Icon: IssueGlyph.issue },
@@ -98,6 +109,7 @@ interface ThreadIssuesPanelProps {
   threadRef: ScopedThreadRef;
   projectId: ProjectId;
   surface: IssuesPanelSurface;
+  composerDraftTarget: ScopedThreadRef | DraftId;
 }
 
 export function ThreadIssuesPanel({ projectId, ...props }: ThreadIssuesPanelProps) {
@@ -109,6 +121,7 @@ function ProjectIssuesPanel({
   threadRef,
   project,
   surface,
+  composerDraftTarget,
 }: Omit<ThreadIssuesPanelProps, "projectId"> & { project: EnvironmentProject }) {
   const { siblings, sibling, siblingProject } = useSiblingSelection(project, surface.sibling);
   const filters = surface.filters ?? DEFAULT_FILTERS;
@@ -152,6 +165,7 @@ function ProjectIssuesPanel({
         <IssueList
           key={`${listProject.environmentId}:${listProject.id}`}
           threadRef={threadRef}
+          composerDraftTarget={composerDraftTarget}
           project={listProject}
           filters={filters}
           onFilters={(next) => setPanel({ filters: next })}
@@ -212,12 +226,14 @@ function AddSiblingAsProject({
 
 function IssueList({
   threadRef,
+  composerDraftTarget,
   project,
   filters,
   onFilters,
   picker,
 }: {
   threadRef: ScopedThreadRef;
+  composerDraftTarget: ScopedThreadRef | DraftId;
   project: EnvironmentProject;
   filters: IssueListPreferences;
   onFilters: (filters: IssueListPreferences) => void;
@@ -289,6 +305,8 @@ function IssueList({
       key: entry.key,
       url: entry.url,
     });
+
+  const showRowMenu = useIssueRowMenu(threadRef, composerDraftTarget);
 
   const update = (patch: Partial<IssueListPreferences>) => {
     const next = { ...filters, ...patch };
@@ -366,14 +384,21 @@ function IssueList({
                   projectId: activeSurface.projectId as ProjectId,
                 }) === key;
               return (
-                <IssueRow
+                <div
                   key={key}
-                  entry={row}
-                  selected={selected}
-                  showScope={showScope}
-                  showTracker={false}
-                  onSelect={openEntry}
-                />
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    void showRowMenu(row, { x: event.clientX, y: event.clientY });
+                  }}
+                >
+                  <IssueRow
+                    entry={row}
+                    selected={selected}
+                    showScope={showScope}
+                    showTracker={false}
+                    onSelect={openEntry}
+                  />
+                </div>
               );
             })}
             {group.more.map((moreEnvironmentId) => {
@@ -454,4 +479,85 @@ function IssueList({
       <div className="min-h-0 flex-1 overflow-y-auto py-2">{body}</div>
     </>
   );
+}
+
+type IssueRowMenuAction =
+  | "start-thread"
+  | "add-to-composer"
+  | "link"
+  | "copy-link"
+  | "open-external";
+
+function useIssueRowMenu(
+  threadRef: ScopedThreadRef,
+  composerDraftTarget: ScopedThreadRef | DraftId,
+) {
+  const { start } = useStartIssueThread();
+  const thread = useThreadShell(threadRef);
+  const canOperate = useEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope);
+  const link = useAtomCommand(threadEnvironment.linkIssue, { reportFailure: false });
+  const unlink = useAtomCommand(threadEnvironment.unlinkIssue, { reportFailure: false });
+
+  return async (row: EnvironmentIssueEntry, position: { x: number; y: number }) => {
+    const api = readLocalApi();
+    if (!api) return;
+    const key = { tracker: row.tracker, host: row.host, scope: row.scope, key: row.key };
+    const linked = (thread?.issues ?? []).some((existing) => threadIssueKeysEqual(existing, key));
+    const sameEnvironment = row.environmentId === threadRef.environmentId;
+    const items: ContextMenuItem<IssueRowMenuAction>[] = [
+      { id: "start-thread", label: "Start thread", icon: "message-square-plus" },
+      { id: "add-to-composer", label: "Add to composer" },
+      ...(thread !== null && canOperate && sameEnvironment
+        ? [
+            {
+              id: "link" as const,
+              label: linked ? "Unlink from this thread" : "Link to this thread",
+            },
+          ]
+        : []),
+      { id: "copy-link", label: "Copy link", icon: "copy", separatorBefore: true },
+      {
+        id: "open-external",
+        label: `Open on ${issueTrackerPresentation(row.tracker).providerName}`,
+      },
+    ];
+    const action = await api.contextMenu.show(items, position).catch(() => null);
+    switch (action) {
+      case "start-thread":
+        return start(row.environmentId, row);
+      case "add-to-composer":
+        return addIssueToComposer(composerDraftTarget, row);
+      case "link": {
+        const input = { threadId: threadRef.threadId, ...key };
+        const result = await (linked
+          ? unlink({ environmentId: threadRef.environmentId, input })
+          : link({
+              environmentId: threadRef.environmentId,
+              input: {
+                ...input,
+                projectId: row.projectId,
+                url: row.url,
+                displayKey: row.displayKey,
+                title: row.title,
+                source: "manual",
+              },
+            }));
+        if (result._tag === "Failure") {
+          toastManager.add({
+            type: "error",
+            title: linked ? "Could not unlink the issue" : "Could not link the issue",
+          });
+        }
+        return;
+      }
+      case "copy-link":
+        return writeTextToClipboard(row.url, "link").catch(() =>
+          toastManager.add({ type: "error", title: "Could not copy the link" }),
+        );
+      case "open-external":
+        return api.shell
+          .openExternal(row.url)
+          .catch(() => toastManager.add({ type: "error", title: "Could not open the link" }));
+    }
+  };
 }

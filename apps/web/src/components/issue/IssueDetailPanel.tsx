@@ -55,6 +55,8 @@ import { cn } from "~/lib/utils";
 import { PullRequestMetaRow, PullRequestSection } from "../pullRequest/PullRequestSummaryTab";
 import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import type { DraftId } from "~/composerDraftStore";
+import { IssueThreadActions } from "./IssueThreadActions";
 import { PullRequestCandidatePicker } from "../pullRequest/PullRequestCandidatePicker";
 import { PullRequestCommentBody } from "../pullRequest/PullRequestCommentBody";
 import { PullRequestDetailTitleRow } from "../pullRequest/PullRequestDetailLayout";
@@ -439,9 +441,11 @@ export function IssueDetailPanel({
   threadRef = null,
   listEntry = null,
   onSelectPullRequest,
+  composerDraftTarget,
 }: {
   environmentId: EnvironmentId;
   reference: IssueRef;
+  composerDraftTarget?: ScopedThreadRef | DraftId | undefined;
   /** The list row this issue was opened from, shown until the detail arrives. */
   listEntry?: IssueListEntry | null;
   threadRef?: ScopedThreadRef | null;
@@ -629,6 +633,11 @@ export function IssueDetailPanel({
             </InlineButton>
             <span className="flex-1" />
             {stateControl}
+            <IssueThreadActions
+              environmentId={environmentId}
+              issue={{ ...detail, projectId: reference.projectId }}
+              composerDraftTarget={composerDraftTarget}
+            />
             {threadRef ? (
               <IssueThreadLinkButton
                 environmentId={environmentId}
