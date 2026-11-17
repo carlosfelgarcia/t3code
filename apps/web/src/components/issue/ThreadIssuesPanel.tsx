@@ -71,6 +71,9 @@ import {
 import { useProject, useProjects, useThreadShell } from "~/state/entities";
 import { useEnvironment } from "~/state/environments";
 import { issueEnvironment, useIssueList } from "~/state/issues";
+import { Checkbox } from "~/components/ui/checkbox";
+import { IssueBulkLabelMenu } from "./IssueBulkLabelMenu";
+import { nextIssueSelection } from "./issueBulkLabels.logic";
 import { projectEnvironment } from "~/state/projects";
 import { useDebouncedValue } from "~/state/queries";
 import { useEnvironmentScope } from "~/state/session";
@@ -288,6 +291,20 @@ function IssueList({
   };
 
   const groups = groupIssues(held, debouncedQuery, projects, sort);
+  const rows = groups.flatMap((group) => group.rows);
+  const orderedKeys = rows.map(issueEntryKey);
+  // Only loaded rows can be selected; a filter change starts over.
+  const [selection, setSelection] = useState<{
+    keys: ReadonlySet<string>;
+    anchor: string | null;
+  }>({ keys: new Set(), anchor: null });
+  const selectedRows = rows.filter((row) => selection.keys.has(issueEntryKey(row)));
+  const toggleSelected = (key: string, range: boolean) =>
+    setSelection((current) => ({
+      keys: nextIssueSelection(current.keys, orderedKeys, key, current.anchor, range),
+      anchor: key,
+    }));
+  const clearSelection = () => setSelection({ keys: new Set(), anchor: null });
   const filterScopes = issueFilterScopes(held, projects);
 
   const activeSurface = useRightPanelStore((state) =>
@@ -309,6 +326,7 @@ function IssueList({
   const showRowMenu = useIssueRowMenu(threadRef, composerDraftTarget);
 
   const update = (patch: Partial<IssueListPreferences>) => {
+    clearSelection();
     const next = { ...filters, ...patch };
     onFilters({
       who: next.who,
@@ -386,11 +404,23 @@ function IssueList({
               return (
                 <div
                   key={key}
+                  className="flex items-center gap-1 ps-2"
                   onContextMenu={(event) => {
                     event.preventDefault();
                     void showRowMenu(row, { x: event.clientX, y: event.clientY });
                   }}
+                  onClickCapture={(event) => {
+                    if (!event.metaKey && !event.ctrlKey && !event.shiftKey) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    toggleSelected(key, event.shiftKey);
+                  }}
                 >
+                  <Checkbox
+                    aria-label={`Select ${row.displayKey}`}
+                    checked={selection.keys.has(key)}
+                    onCheckedChange={() => toggleSelected(key, false)}
+                  />
                   <IssueRow
                     entry={row}
                     selected={selected}
@@ -440,7 +470,10 @@ function IssueList({
             label="Search issues"
             placeholder="Search issues"
             busy={query !== debouncedQuery || (debouncedQuery.length > 0 && list.isPending)}
-            onChange={setQuery}
+            onChange={(next) => {
+              clearSelection();
+              setQuery(next);
+            }}
             onSubmit={(q) => update({ q: q || undefined })}
           />
         </div>
@@ -476,7 +509,34 @@ function IssueList({
           <RefreshIcon size="md" refreshing={list.isPending} />
         </Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto py-2">{body}</div>
+      {selectedRows.length > 0 ? (
+        <div className="flex items-center gap-2 border-b px-3 py-1.5 text-xs">
+          <span className="text-muted-foreground tabular-nums">{selectedRows.length} selected</span>
+          <IssueBulkLabelMenu environmentId={environmentId} rows={selectedRows} />
+          <span className="flex-1" />
+          <Button
+            size="xs"
+            variant="ghost"
+            onClick={() => setSelection({ keys: new Set(orderedKeys), anchor: selection.anchor })}
+          >
+            Select all
+          </Button>
+          <Button size="xs" variant="ghost" onClick={clearSelection}>
+            Clear
+          </Button>
+        </div>
+      ) : null}
+      <div
+        className="min-h-0 flex-1 overflow-y-auto py-2"
+        onKeyDown={(event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key === "a" && orderedKeys.length > 0) {
+            event.preventDefault();
+            setSelection({ keys: new Set(orderedKeys), anchor: selection.anchor });
+          }
+        }}
+      >
+        {body}
+      </div>
     </>
   );
 }
