@@ -196,6 +196,31 @@ describe("command permissions", () => {
       }),
   );
 
+  it.effect("requires the destination settings grant to connect or bind an issue tracker", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const registry = yield* setup;
+        const connect = createCommandPermissions(runtime, WS_METHODS.issueTrackersConnect);
+        const bind = createCommandPermissions(runtime, WS_METHODS.issueTrackersBindProject);
+        registry.set(sessions(env), AsyncResult.success(grant(true)));
+        expect(registry.get(connect.permissionAtom(env))).toBe(false);
+        expect(registry.get(bind.permissionAtom(env))).toBe(false);
+        registry.set(
+          sessions(env),
+          AsyncResult.success({
+            ...grant(false),
+            scopes: [AuthSettingsWriteScope],
+            permissions: [AuthSettingsWriteScope],
+          }),
+        );
+        expect(registry.get(connect.permissionAtom(env))).toBe(true);
+        expect(registry.get(bind.permissionAtom(env))).toBe(true);
+        yield* connect.authorize(registry, env);
+        yield* bind.authorize(registry, env);
+      }),
+    ),
+  );
+
   it.effect.each([WS_METHODS.scheduledTasksDelete, ORCHESTRATION_V2_WS_METHODS.stopWorkflow])(
     "uses the target grant for both availability and execution of %s",
     (method) =>
@@ -281,22 +306,15 @@ describe("command permissions", () => {
 });
 
 it.effect(
-  "requires source control alone for git and issue changes, and both grants when attaching a worktree to a thread",
+  "requires source control alone for git, and both grants when attaching a worktree to a thread",
   () =>
     Effect.gen(function* () {
       const registry = yield* setup;
       registry.set(sessions(env), AsyncResult.success(grant(true)));
-      const writes = [
-        WS_METHODS.vcsInit,
-        WS_METHODS.issuesSetLabels,
-        WS_METHODS.issuesSetState,
-      ].map((method) => createCommandPermissions(runtime, method));
-      for (const write of writes) {
-        expect(registry.get(write.permissionAtom(env))).toBe(false);
-        expect((yield* write.authorize(registry, env).pipe(Effect.flip)).requiredPermission).toBe(
-          AuthSourceControlWriteScope,
-        );
-      }
+      const git = createCommandPermissions(runtime, WS_METHODS.vcsInit);
+      expect((yield* git.authorize(registry, env).pipe(Effect.flip)).requiredPermission).toBe(
+        AuthSourceControlWriteScope,
+      );
       registry.set(
         sessions(env),
         AsyncResult.success({
@@ -305,7 +323,7 @@ it.effect(
           permissions: [AuthSourceControlWriteScope],
         }),
       );
-      for (const write of writes) yield* write.authorize(registry, env);
+      yield* git.authorize(registry, env);
       const prepare = createCommandPermissions(runtime, WS_METHODS.gitPreparePullRequestThread);
       const input = {
         cwd: "/repo",

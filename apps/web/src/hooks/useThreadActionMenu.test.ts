@@ -36,7 +36,6 @@ function recordEffect(action: string) {
 
 vi.mock("../components/CustomSnoozeDialog", () => ({ requestCustomSnooze: vi.fn() }));
 vi.mock("~/rightPanelStore", () => ({
-  openThreadIssues: vi.fn(),
   useRightPanelStore: { getState: () => ({ open: vi.fn() }) },
 }));
 vi.mock("react", () => ({

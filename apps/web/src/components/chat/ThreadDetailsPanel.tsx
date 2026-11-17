@@ -39,7 +39,6 @@ import { useClientSettings } from "../../hooks/useSettings";
 import { useProject, useServerConfigs } from "../../state/entities";
 import { ThreadDetailsThreadPrRows } from "./ThreadDetailsPrRows";
 import { cn } from "../../lib/utils";
-import { projectIssueRepositories } from "../issues/issues.logic";
 import { CircleDotIcon, GitGraphIcon, SlidersHorizontalIcon } from "lucide-react";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import {
@@ -115,7 +114,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
     serverConfig !== undefined &&
     project !== null &&
     !isScratchProject(project, serverConfig.scratchWorkspaceRoot);
-  const hasIssueRepository = project !== null && projectIssueRepositories(project).length > 0;
+  const issuesSupported = serverConfig?.environment.capabilities.issues === true;
   const branchToolbarProps = {
     showGitControls: props.isGitRepo,
     environmentId: props.environmentId,
@@ -182,7 +181,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
             offersGit &&
             props.activeProjectName !== undefined &&
             (visible.gitActions || (visible.changes && props.isGitRepo)),
-          issues: density === "full" && offersGit && hasIssueRepository && visible.issues,
+          issues: density === "full" && offersGit && issuesSupported && visible.issues,
           gitTree: density === "full" && offersGit && props.isGitRepo && visible.gitTree,
           cleanRepo: density === "full" && offersGit && props.isGitRepo && visible.cleanRepo,
         };
