@@ -96,17 +96,17 @@ export function pullRequestHostLabel(
 export function PullRequestSearchInput({
   value,
   busy,
+  label,
+  placeholder,
   onChange,
   onSubmit,
-  placeholder = "Search pull requests, or label:bug",
-  label = "Search pull requests",
 }: {
   value: string;
   busy?: boolean;
+  label: string;
+  placeholder: string;
   onChange: (value: string) => void;
   onSubmit: (value: string) => void;
-  placeholder?: string;
-  label?: string;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   return (
@@ -215,7 +215,7 @@ function PullRequestFilterRadioGroup<Value extends string>({
   );
 }
 
-function PullRequestFilterRadioSubmenu<Value extends string>({
+export function PullRequestFilterRadioSubmenu<Value extends string>({
   label,
   value,
   options,
@@ -319,7 +319,7 @@ function PullRequestAuthorChoices({
               <span className="min-w-0 flex-1 truncate">{option.actor.login}</span>
               {option.mergedCount > 0 ? (
                 <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                  {option.mergedCount} merges loaded
+                  {option.mergedCount} {option.mergedCount === 1 ? "merge" : "merges"} loaded
                 </span>
               ) : null}
             </span>

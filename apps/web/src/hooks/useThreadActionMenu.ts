@@ -42,14 +42,13 @@ import {
   derivePhysicalProjectKey,
   selectProjectGroupingSettings,
 } from "@t3tools/client-runtime/state/project-grouping";
-import { issueRepositories } from "../components/issues/issues.logic";
 import { buildPhysicalToLogicalProjectKeyMap } from "../sidebarProjectGrouping";
 import { threadRuntimeCanArchive } from "@t3tools/client-runtime/state/models";
 import { useCopyToClipboard } from "./useCopyToClipboard";
 import { useNewThreadHandler } from "./useHandleNewThread";
 import { useClientSettings } from "./useSettings";
 import { canTurnThreadIntoProject, useThreadActions } from "./useThreadActions";
-import { openThreadIssues, useRightPanelStore } from "~/rightPanelStore";
+import { useRightPanelStore } from "~/rightPanelStore";
 
 function failureToast(title: string, error: unknown) {
   toastManager.add(
@@ -99,22 +98,13 @@ export function useThreadActionMenu(input: {
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
   const timestampFormat = useClientSettings((s) => s.timestampFormat);
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
-    onCopy: ({ path }) => {
-      toastManager.add({ type: "success", title: "Path copied", description: path });
-    },
     onError: (error) => failureToast("Failed to copy path", error),
   });
   const { copyToClipboard: copyBranchToClipboard } = useCopyToClipboard<{ branch: string }>({
     target: "branch name",
-    onCopy: ({ branch }) => {
-      toastManager.add({ type: "success", title: "Branch copied", description: branch });
-    },
     onError: (error) => failureToast("Failed to copy branch", error),
   });
   const { copyToClipboard: copyThreadIdToClipboard } = useCopyToClipboard<{ threadId: ThreadId }>({
-    onCopy: ({ threadId }) => {
-      toastManager.add({ type: "success", title: "Thread ID copied", description: threadId });
-    },
     onError: (error) => failureToast("Failed to copy thread ID", error),
   });
 
@@ -159,7 +149,7 @@ export function useThreadActionMenu(input: {
         snoozePresets,
         canShareWithGuest,
         canTurnIntoProject: canTurnThreadIntoProject(threadRef),
-        issueRepositories: project ? issueRepositories([project]) : [],
+        canOpenIssues: project !== undefined && project.isScratch !== true,
         canOpenGitTree: project !== undefined && project.isScratch !== true,
       });
       const clicked = await settlePromise(() => api.contextMenu.show(items, position));
@@ -192,10 +182,6 @@ export function useThreadActionMenu(input: {
         }
         return;
       }
-      if (action.startsWith("open-issues:")) {
-        openThreadIssues(threadRef, action.slice("open-issues:".length));
-        return;
-      }
       const reportFailure = async (
         title: string,
         run: () => Promise<AtomCommandResult<unknown, unknown>>,
@@ -208,6 +194,9 @@ export function useThreadActionMenu(input: {
       switch (action) {
         case "find":
           onFind?.(threadRef);
+          return;
+        case "open-issues":
+          useRightPanelStore.getState().open(threadRef, "issues");
           return;
         case "open-git-tree":
           useRightPanelStore.getState().open(threadRef, "git-tree");

@@ -1,0 +1,827 @@
+import { describe, expect, it } from "@effect/vitest";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import { HttpClient, HttpClientResponse } from "effect/http";
+import { IssueTemplateList } from "@t3tools/contracts";
+import * as GitHubAppSignIn from "./GitHubAppSignIn.ts";
+import * as GitHubCredentials from "./GitHubCredentials.ts";
+import * as GitHubRest from "./GitHubRest.ts";
+import * as GitHubQuota from "./GitHubQuota.ts";
+import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
+import * as GitHubIssueTracker from "./GitHubIssueTracker.ts";
+
+const DETAIL_RESPONSE = JSON.stringify({
+  data: {
+    viewer: { login: "julius" },
+    repository: {
+      viewerPermission: "TRIAGE",
+      issue: {
+        __typename: "Issue",
+        number: 42,
+        title: "Composer loses focus",
+        url: "https://github.com/acme/web/issues/42",
+        author: {
+          __typename: "User",
+          login: "octocat",
+          avatarUrl: "https://avatars/octocat",
+          name: "Octo Cat",
+        },
+        state: "CLOSED",
+        stateReason: "DUPLICATE",
+        createdAt: "2026-07-01T00:00:00Z",
+        updatedAt: "2026-07-03T00:00:00Z",
+        closedAt: "2026-07-03T00:00:00Z",
+        comments: {
+          totalCount: 3,
+          pageInfo: { hasPreviousPage: true, startCursor: "Y3Vyc29y" },
+          nodes: [
+            {
+              __typename: "IssueComment",
+              id: "IC_1",
+              author: { __typename: "User", login: "julius", avatarUrl: "https://avatars/julius" },
+              body: "Repro attached.",
+              createdAt: "2026-07-02T00:00:00Z",
+              url: "https://github.com/acme/web/issues/42#issuecomment-1",
+              reactionGroups: [
+                {
+                  content: "THUMBS_UP",
+                  viewerHasReacted: true,
+                  reactors: {
+                    totalCount: 2,
+                    nodes: [
+                      { __typename: "User", login: "julius" },
+                      { __typename: "User", login: "theo" },
+                    ],
+                  },
+                },
+                {
+                  content: "EYES",
+                  viewerHasReacted: false,
+                  reactors: { totalCount: 0, nodes: [] },
+                },
+              ],
+            },
+          ],
+        },
+        assignees: {
+          pageInfo: { hasNextPage: false, endCursor: null },
+          nodes: [{ login: "theo", name: null, avatarUrl: "https://avatars/julius" }],
+        },
+        labels: {
+          pageInfo: { hasNextPage: true, endCursor: "labels-next" },
+          nodes: [{ name: "bug", color: "d73a4a" }, null],
+        },
+        body: "Typing in the composer drops focus after a paste.",
+        viewerCanUpdate: false,
+        viewerCanClose: false,
+        viewerCanReopen: true,
+        reactionGroups: [],
+        closedByPullRequestsReferences: {
+          nodes: [
+            {
+              number: 50,
+              title: "fix(web): keep composer focus",
+              url: "https://github.com/acme/web/pull/50",
+              state: "MERGED",
+              isDraft: false,
+              repository: { nameWithOwner: "acme/web" },
+            },
+          ],
+        },
+        timelineItems: {
+          nodes: [
+            {
+              __typename: "LabeledEvent",
+              id: "LE_1",
+              createdAt: "2026-07-01T01:00:00Z",
+              actor: { __typename: "User", login: "theo", avatarUrl: "https://avatars/theo" },
+              label: { name: "bug" },
+            },
+            {
+              __typename: "CrossReferencedEvent",
+              id: "CRE_1",
+              createdAt: "2026-07-02T01:00:00Z",
+              actor: { __typename: "User", login: "julius", avatarUrl: "https://avatars/julius" },
+              source: {
+                __typename: "PullRequest",
+                number: 50,
+                title: "fix(web): keep composer focus",
+                url: "https://github.com/acme/web/pull/50",
+                state: "MERGED",
+                isDraft: false,
+                repository: { nameWithOwner: "acme/web" },
+              },
+            },
+            { __typename: "MentionedEvent", id: "ME_1", createdAt: "2026-07-02T02:00:00Z" },
+            {
+              __typename: "ClosedEvent",
+              id: "CE_1",
+              createdAt: "2026-07-03T00:00:00Z",
+              actor: null,
+            },
+          ],
+        },
+      },
+    },
+  },
+});
+
+const decodeVariables = Schema.decodeUnknownSync(
+  Schema.fromJsonString(
+    Schema.Struct({
+      query: Schema.String,
+      variables: Schema.Record(Schema.String, Schema.Unknown),
+    }),
+  ),
+);
+
+function transport(httpClient: HttpClient.HttpClient) {
+  return GitHubRest.layer.pipe(
+    Layer.provideMerge(
+      Layer.mergeAll(
+        GitHubQuota.layer,
+        SourceControlRateLimit.layer,
+        Layer.mock(GitHubCredentials.GitHubCredentials)({
+          saved: () => Effect.succeedNone,
+          get: (host) =>
+            Effect.succeed({
+              host,
+              token: Redacted.make("test-token"),
+              source: "gh" as const,
+              fingerprint: "test",
+            }),
+        }),
+        Layer.mock(GitHubAppSignIn.GitHubAppSignIn)({
+          enabled: false,
+          token: () => Effect.succeedNone,
+          invalidate: () => Effect.void,
+        }),
+        Layer.succeed(HttpClient.HttpClient, httpClient),
+      ),
+    ),
+  );
+}
+
+// An older Enterprise server has no sub-issue or dependency fields, so the query fails there.
+const NO_RELATIONS_RESPONSE = JSON.stringify({
+  errors: [{ message: "Field 'subIssues' doesn't exist on type 'Issue'" }],
+});
+
+function tracker(
+  onRequest: (variables: unknown) => void,
+  templateRepository?: unknown,
+  relationsIssue?: unknown,
+) {
+  return GitHubIssueTracker.make.pipe(
+    Effect.provide(
+      transport(
+        HttpClient.make((request) => {
+          if (request.body._tag !== "Uint8Array")
+            return Effect.die("Expected a GraphQL JSON request.");
+          const { query, variables } = decodeVariables(new TextDecoder().decode(request.body.body));
+          if (query.includes("query IssueRelations")) {
+            return Effect.succeed(
+              HttpClientResponse.fromWeb(
+                request,
+                new Response(
+                  relationsIssue === undefined
+                    ? NO_RELATIONS_RESPONSE
+                    : JSON.stringify({ data: { repository: { issue: relationsIssue } } }),
+                  { headers: { "content-type": "application/json" } },
+                ),
+              ),
+            );
+          }
+          onRequest(variables);
+          const body =
+            templateRepository !== undefined
+              ? JSON.stringify({ data: { repository: templateRepository } })
+              : "labelsCursor" in variables
+                ? JSON.stringify({
+                    data: {
+                      repository: {
+                        issue: {
+                          labels: {
+                            pageInfo: { hasNextPage: false, endCursor: null },
+                            nodes: [{ name: "needs repro", color: "ffffff" }],
+                          },
+                          assignees: {
+                            pageInfo: { hasNextPage: false, endCursor: null },
+                            nodes: [],
+                          },
+                        },
+                      },
+                    },
+                  })
+                : DETAIL_RESPONSE;
+          return Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              new Response(body, {
+                headers: { "content-type": "application/json" },
+              }),
+            ),
+          );
+        }),
+      ),
+    ),
+  );
+}
+
+const encodeTemplateList = Schema.encodeSync(IssueTemplateList);
+
+const decodeBody = Schema.decodeUnknownSync(
+  Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+);
+
+describe("GitHubIssueTracker", () => {
+  it.effect("writes an issue lifecycle without mutating pull requests or foreign comments", () =>
+    Effect.gen(function* () {
+      const writes: unknown[] = [];
+      let issueState: { state: string; stateReason: string | null } = {
+        state: "OPEN",
+        stateReason: null,
+      };
+      const http = HttpClient.make((request) => {
+        if (request.body._tag !== "Uint8Array") return Effect.die("Expected a JSON request.");
+        const text = new TextDecoder().decode(request.body.body);
+        let response: unknown = {};
+        if (request.url === "https://api.github.com/graphql") {
+          const { query, variables } = decodeVariables(text);
+          expect(request.method).toBe("POST");
+          const operation = query.match(/(?:query|mutation)\s+(\w+)/)?.[1];
+          if (operation === "IssueNodeId" || operation === "IssueCommentScope") {
+            expect(variables).toMatchObject({ owner: "acme", name: "web" });
+            response = {
+              data: {
+                repository: {
+                  issue: variables["number"] === 42 ? { id: "I_42", ...issueState } : null,
+                },
+                ...(operation === "IssueCommentScope"
+                  ? { node: { __typename: "IssueComment", issue: { id: "I_other" } } }
+                  : {}),
+              },
+            };
+          } else {
+            expect(["AddReaction", "RemoveReaction"]).toContain(operation);
+            expect(variables).toEqual({ subjectId: "I_42", content: "THUMBS_UP" });
+            writes.push(operation);
+            response = {
+              data: {
+                [operation === "AddReaction" ? "addReaction" : "removeReaction"]: {
+                  reaction: { content: "THUMBS_UP" },
+                },
+              },
+            };
+          }
+        } else {
+          const body = decodeBody(text);
+          writes.push([request.method, request.url, body]);
+          if (typeof body["state"] === "string") {
+            issueState = {
+              state: body["state"].toUpperCase(),
+              stateReason:
+                typeof body["state_reason"] === "string"
+                  ? body["state_reason"].toUpperCase()
+                  : null,
+            };
+          }
+          if (request.url.endsWith("/issues")) {
+            response = { number: 42, html_url: "https://github.com/acme/web/issues/42" };
+          } else if (request.method === "PATCH" && body["title"] === "Dropped") {
+            // What GitHub answers a caller without triage access: success, metadata untouched.
+            response = { labels: [{ name: "Bug" }], assignees: [] };
+          } else if (request.method === "PATCH") {
+            response = { labels: [], assignees: [] };
+          }
+        }
+        return Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            new Response(JSON.stringify(response), {
+              headers: { "content-type": "application/json" },
+            }),
+          ),
+        );
+      });
+      const api = yield* GitHubIssueTracker.make.pipe(Effect.provide(transport(http)));
+      const target = { cwd: "/w", host: "github.com", scope: "acme/web", key: "42" };
+      expect(
+        yield* api.create({
+          ...target,
+          title: "Fixture",
+          body: "Body",
+          labels: ["bug"],
+          assignees: ["octocat"],
+        }),
+      ).toEqual({
+        key: "42",
+        displayKey: "#42",
+        url: "https://github.com/acme/web/issues/42",
+      });
+      yield* api.comment({ ...target, body: "Comment" });
+      yield* api.update({ ...target, title: "Updated", body: "Edited", labels: [], assignees: [] });
+      expect(
+        yield* Effect.flip(api.update({ ...target, title: "Dropped", labels: ["bug", "p1"] })),
+      ).toMatchObject({ operation: "update", reason: "failed" });
+      yield* api.update({ ...target, title: "Dropped", labels: ["bug"], assignees: [] });
+      expect(yield* Effect.flip(api.setState({ ...target, state: "closed" }))).toMatchObject({
+        operation: "setState",
+        reason: "failed",
+      });
+      yield* api.setState({ ...target, state: "Not planned" });
+      // GitHub ignores a new reason on a closed issue, so it is refused instead of sent.
+      expect(
+        yield* api.setState({ ...target, state: "Completed" }).pipe(Effect.result),
+      ).toMatchObject({ _tag: "Failure", failure: { operation: "setState", reason: "failed" } });
+      yield* api.setState({ ...target, state: "Open" });
+      yield* api.setState({ ...target, state: "Duplicate" });
+      yield* api.setState({ ...target, state: "Open" });
+      yield* api.setReaction({ ...target, content: "thumbs-up", reacted: true });
+      yield* api.setReaction({ ...target, content: "thumbs-up", reacted: false });
+
+      const pullRequest = { ...target, key: "50" };
+      expect(
+        yield* api.update({ ...pullRequest, title: "Do not edit" }).pipe(Effect.result),
+      ).toMatchObject({ _tag: "Failure", failure: { operation: "update", reason: "not-found" } });
+      expect(
+        yield* api.setState({ ...pullRequest, state: "Completed" }).pipe(Effect.result),
+      ).toMatchObject({
+        _tag: "Failure",
+        failure: { operation: "setState", reason: "not-found" },
+      });
+      expect(
+        yield* api.comment({ ...pullRequest, body: "Do not comment" }).pipe(Effect.result),
+      ).toMatchObject({ _tag: "Failure", failure: { operation: "comment", reason: "not-found" } });
+      expect(
+        yield* Effect.flip(
+          api.setReaction({
+            ...target,
+            subjectId: "IC_other",
+            content: "thumbs-up",
+            reacted: true,
+          }),
+        ),
+      ).toMatchObject({ operation: "setReaction", reason: "failed" });
+
+      expect(writes).toEqual([
+        [
+          "POST",
+          "https://api.github.com/repos/acme/web/issues",
+          { title: "Fixture", body: "Body", labels: ["bug"], assignees: ["octocat"] },
+        ],
+        ["POST", "https://api.github.com/repos/acme/web/issues/42/comments", { body: "Comment" }],
+        [
+          "PATCH",
+          "https://api.github.com/repos/acme/web/issues/42",
+          { title: "Updated", body: "Edited", labels: [], assignees: [] },
+        ],
+        [
+          "PATCH",
+          "https://api.github.com/repos/acme/web/issues/42",
+          { title: "Dropped", labels: ["bug", "p1"] },
+        ],
+        [
+          "PATCH",
+          "https://api.github.com/repos/acme/web/issues/42",
+          { title: "Dropped", labels: ["bug"], assignees: [] },
+        ],
+        [
+          "PATCH",
+          "https://api.github.com/repos/acme/web/issues/42",
+          { state: "closed", state_reason: "not_planned" },
+        ],
+        ["PATCH", "https://api.github.com/repos/acme/web/issues/42", { state: "open" }],
+        [
+          "PATCH",
+          "https://api.github.com/repos/acme/web/issues/42",
+          { state: "closed", state_reason: "duplicate" },
+        ],
+        ["PATCH", "https://api.github.com/repos/acme/web/issues/42", { state: "open" }],
+        "AddReaction",
+        "RemoveReaction",
+      ]);
+    }),
+  );
+
+  it.effect("asks search for the labels, assignee and order a listing names", () =>
+    Effect.gen(function* () {
+      const seen: unknown[] = [];
+      const api = yield* tracker((variables) => seen.push(variables));
+      // The canned answer is not a search result; only the query sent matters here.
+      yield* api
+        .listIssues({
+          cwd: "/w",
+          host: "github.com",
+          scope: "acme/web",
+          state: "open",
+          involvement: "all",
+          viewer: "julius",
+          labels: ['needs "repro"'],
+          assignee: "theo",
+          sort: "created",
+          limit: 10,
+        })
+        .pipe(Effect.exit);
+      expect(seen[0]).toMatchObject({
+        q: 'is:issue repo:acme/web is:open label:"needs \\"repro\\"" assignee:"theo" sort:created-desc',
+      });
+    }),
+  );
+
+  it.effect("gives list rows their sub-issue progress and open blockers when GitHub has them", () =>
+    Effect.gen(function* () {
+      const searchRow = (id: string, number: number) => ({
+        __typename: "Issue",
+        id,
+        number,
+        title: `Issue ${number}`,
+        url: `https://github.com/acme/web/issues/${number}`,
+        state: "OPEN",
+        stateReason: null,
+        createdAt: "2026-07-01T00:00:00Z",
+        updatedAt: "2026-07-01T00:00:00Z",
+        closedAt: null,
+        author: null,
+        assignees: { nodes: [] },
+        labels: { nodes: [] },
+        comments: { totalCount: 0 },
+      });
+      const blocker = (number: number, state: string) => ({
+        number,
+        title: `Issue ${number}`,
+        url: `https://github.com/acme/api/issues/${number}`,
+        state,
+        stateReason: state === "CLOSED" ? "COMPLETED" : null,
+        repository: { nameWithOwner: "acme/api" },
+      });
+      const listing = (withRelations: boolean) => {
+        const relationIds: unknown[] = [];
+        const http = HttpClient.make((request) => {
+          if (request.body._tag !== "Uint8Array") return Effect.die("Expected a JSON request.");
+          const { query, variables } = decodeVariables(new TextDecoder().decode(request.body.body));
+          let body: unknown;
+          if (query.includes("query IssueRowRelations")) {
+            relationIds.push(variables.ids);
+            body = withRelations
+              ? {
+                  data: {
+                    nodes: [
+                      {
+                        __typename: "Issue",
+                        id: "I_42",
+                        subIssuesSummary: { total: 3, completed: 1 },
+                        issueDependenciesSummary: { blockedBy: 2 },
+                        blockedBy: { nodes: [blocker(9, "OPEN"), blocker(8, "CLOSED")] },
+                      },
+                      {
+                        __typename: "Issue",
+                        id: "I_43",
+                        subIssuesSummary: { total: 0, completed: 0 },
+                        issueDependenciesSummary: { blockedBy: 0 },
+                        blockedBy: { nodes: [] },
+                      },
+                    ],
+                  },
+                }
+              : JSON.parse(NO_RELATIONS_RESPONSE);
+          } else if (query.includes("query IssueSearch")) {
+            body = {
+              data: {
+                search: {
+                  pageInfo: { hasNextPage: false, endCursor: null },
+                  nodes: [searchRow("I_42", 42), searchRow("I_43", 43)],
+                },
+              },
+            };
+          } else {
+            body = { data: { viewer: { login: "julius" } } };
+          }
+          return Effect.succeed(
+            HttpClientResponse.fromWeb(
+              request,
+              new Response(JSON.stringify(body), {
+                headers: { "content-type": "application/json" },
+              }),
+            ),
+          );
+        });
+        return GitHubIssueTracker.make.pipe(
+          Effect.provide(transport(http)),
+          Effect.flatMap((api) =>
+            api.listIssues({
+              cwd: "/w",
+              host: "github.com",
+              scope: "acme/web",
+              state: "open",
+              involvement: "all",
+              viewer: "julius",
+              sort: "updated",
+              limit: 10,
+            }),
+          ),
+          Effect.map((page) => ({ page, relationIds })),
+        );
+      };
+
+      const { page, relationIds } = yield* listing(true);
+      expect(relationIds).toEqual([["I_42", "I_43"]]);
+      // A closed blocker is not named; a row with nothing to show carries no summary.
+      expect(page.items.map((item) => [item.key, item.relationSummary])).toEqual([
+        [
+          "42",
+          {
+            subIssuesTotal: 3,
+            subIssuesCompleted: 1,
+            openBlockerCount: 2,
+            openBlockers: [
+              {
+                scope: "acme/api",
+                key: "9",
+                displayKey: "acme/api#9",
+                title: "Issue 9",
+                url: "https://github.com/acme/api/issues/9",
+                state: { category: "open", name: "Open" },
+              },
+            ],
+          },
+        ],
+        ["43", undefined],
+      ]);
+
+      const older = yield* listing(false);
+      expect(older.page.items.map((item) => item.key)).toEqual(["42", "43"]);
+      expect(older.page.items.every((item) => item.relationSummary === undefined)).toBe(true);
+    }),
+  );
+
+  it.effect("offers YAML issue forms when blank issues are disabled", () =>
+    Effect.gen(function* () {
+      const form = {
+        __typename: "Blob",
+        isTruncated: false,
+        text: `name: Bug report
+description: Report broken behavior.
+title: "[Bug]: "
+labels: [bug, needs-triage]
+assignees: "octocat, theo"
+body:
+  - type: markdown
+    attributes:
+      value: Search existing issues first.
+  - type: checkboxes
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues.
+          required: true
+  - type: dropdown
+    attributes:
+      label: Area
+      description: Which part is affected?
+      options: [Web, Server]
+      default: 1
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Steps to reproduce
+      placeholder: Start the app.
+  - type: input
+    attributes:
+      label: Version
+      value: main
+  - type: upload
+    attributes:
+      label: Supporting files
+      description: Redact secrets before uploading.
+`,
+      };
+      const config = {
+        __typename: "Blob",
+        isTruncated: false,
+        text: '"blank_issues_enabled": false # use a template',
+      };
+      const repository = {
+        issueTemplates: [],
+        templateDirectory: {
+          __typename: "Tree",
+          entries: [
+            { name: "config.yml", object: config },
+            { name: "bug_report.yml", object: form },
+            {
+              name: "empty_name.yml",
+              object: { ...form, text: 'name: ""\ndescription: Empty name\nbody: []' },
+            },
+            {
+              name: "blank_name.yml",
+              object: { ...form, text: 'name: "   "\ndescription: Blank name\nbody: []' },
+            },
+            {
+              name: "invalid.yml",
+              object: { ...form, text: "name: Missing required metadata\nbody: []" },
+            },
+          ],
+        },
+      };
+      const api = yield* tracker(() => {}, repository);
+      const input = { cwd: "/w", host: "github.com", scope: "acme/web" };
+      const result = yield* api.listTemplates!(input);
+      expect(encodeTemplateList(result)).toEqual(result);
+      expect(result.blankIssuesEnabled).toBe(false);
+      expect(result.templates).toHaveLength(1);
+      expect(result.templates[0]).toMatchObject({
+        key: "bug_report.yml",
+        name: "Bug report",
+        about: "Report broken behavior.",
+        title: "[Bug]: ",
+        labels: ["bug", "needs-triage"],
+        assignees: ["octocat", "theo"],
+      });
+      expect(result.templates[0]?.body).toBe(`Search existing issues first.
+
+### Before submitting
+
+- [ ] I searched existing issues. (required)
+
+### Area
+
+Which part is affected?
+
+Required.
+
+Choose one:
+
+- Web
+- Server (default)
+
+### Steps to reproduce
+
+Example:
+> Start the app.
+
+### Version
+
+main
+
+### Supporting files
+
+Redact secrets before uploading.`);
+      config.isTruncated = true;
+      expect(yield* Effect.flip(api.listTemplates!(input))).toMatchObject({
+        reason: "failed",
+        detail: "GitHub returned incomplete issue template contents.",
+      });
+    }),
+  );
+
+  it.effect("maps a detail read to the neutral issue shape", () =>
+    Effect.gen(function* () {
+      const seen: unknown[] = [];
+      const node = (
+        number: number,
+        nameWithOwner: string,
+        state = "OPEN",
+        stateReason: string | null = null,
+      ) => ({
+        number,
+        title: `Issue ${number}`,
+        url: `https://github.com/${nameWithOwner}/issues/${number}`,
+        state,
+        stateReason,
+        repository: { nameWithOwner },
+      });
+      const api = yield* tracker(
+        (variables) => {
+          seen.push(variables);
+        },
+        undefined,
+        {
+          parent: node(7, "acme/web"),
+          subIssuesSummary: { total: 3, completed: 1 },
+          subIssues: { nodes: [node(43, "acme/web", "CLOSED", "COMPLETED"), null] },
+          blockedBy: { nodes: [node(9, "acme/api")] },
+          blocking: { nodes: [] },
+        },
+      );
+      const issue = yield* api.getIssue({
+        cwd: "/w",
+        host: "github.com",
+        scope: "acme/web",
+        key: "42",
+      });
+      expect(seen).toEqual([
+        { owner: "acme", name: "web", number: 42 },
+        {
+          owner: "acme",
+          name: "web",
+          number: 42,
+          labelsCursor: "labels-next",
+          assigneesCursor: null,
+        },
+      ]);
+      expect(issue).toMatchObject({
+        key: "42",
+        displayKey: "#42",
+        title: "Composer loses focus",
+        body: "Typing in the composer drops focus after a paste.",
+        state: { category: "closed", name: "Duplicate", closeReason: "duplicate" },
+        states: [
+          { category: "open", name: "Open" },
+          { category: "closed", name: "Completed", closeReason: "completed" },
+          { category: "closed", name: "Not planned", closeReason: "not-planned" },
+          { category: "closed", name: "Duplicate", closeReason: "duplicate" },
+        ],
+        author: {
+          login: "octocat",
+          name: "Octo Cat",
+          avatarUrl: "https://avatars/octocat",
+        },
+        assignees: [{ login: "theo" }],
+        labels: [
+          { name: "bug", color: "d73a4a" },
+          { name: "needs repro", color: "ffffff" },
+        ],
+        commentCount: 3,
+        viewer: "julius",
+        // Triage may label, assign, close and reopen; `viewerCanUpdate: false` withholds edits.
+        viewerPermissions: {
+          setState: true,
+          edit: false,
+          labels: true,
+          assignees: true,
+          comment: true,
+        },
+        commentsCursor: "Y3Vyc29y",
+      });
+      // The viewer is left out of `actors` and shown as "You"; an empty group is dropped.
+      expect(issue.comments[0]?.reactions).toEqual([
+        { content: "thumbs-up", count: 2, actors: ["theo"], viewerHasReacted: true },
+      ]);
+      // The closing reference wins over the cross-reference sighting of the same pull request.
+      expect(issue.linkedPullRequests).toEqual([
+        {
+          repository: "acme/web",
+          number: 50,
+          title: "fix(web): keep composer focus",
+          url: "https://github.com/acme/web/pull/50",
+          state: "merged",
+          isDraft: false,
+          closesIssue: true,
+        },
+      ]);
+      // An event kind this page has no vocabulary for is dropped rather than guessed at.
+      expect(issue.events.map((event) => [event.kind, event.detail])).toEqual([
+        ["labeled", "bug"],
+        ["referenced", "acme/web#50"],
+        ["closed", null],
+      ]);
+      // A blocker in another repository is named with its repository.
+      expect(issue.relatedIssues).toEqual({
+        parent: {
+          scope: "acme/web",
+          key: "7",
+          displayKey: "#7",
+          title: "Issue 7",
+          url: "https://github.com/acme/web/issues/7",
+          state: { category: "open", name: "Open" },
+        },
+        subIssues: [
+          {
+            scope: "acme/web",
+            key: "43",
+            displayKey: "#43",
+            title: "Issue 43",
+            url: "https://github.com/acme/web/issues/43",
+            state: { category: "closed", name: "Completed", closeReason: "completed" },
+          },
+        ],
+        subIssuesTotal: 3,
+        subIssuesCompleted: 1,
+        blockedBy: [
+          {
+            scope: "acme/api",
+            key: "9",
+            displayKey: "acme/api#9",
+            title: "Issue 9",
+            url: "https://github.com/acme/api/issues/9",
+            state: { category: "open", name: "Open" },
+          },
+        ],
+        blocking: [],
+      });
+
+      const withoutRelations = yield* (yield* tracker(() => undefined)).getIssue({
+        cwd: "/w",
+        host: "github.com",
+        scope: "acme/web",
+        key: "42",
+      });
+      expect(withoutRelations.title).toBe("Composer loses focus");
+      expect(withoutRelations.relatedIssues).toBeUndefined();
+    }),
+  );
+});

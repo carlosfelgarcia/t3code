@@ -5,19 +5,19 @@ Terms whose meaning matters across T3 Code. Architecture and lifecycle constrain
 
 ## Workspace and conversation
 
-| Term               | Meaning                                                                                           |
-| ------------------ | ------------------------------------------------------------------------------------------------- |
-| Environment        | One running server and the machine, credentials, workspace access, and state it owns.             |
-| Client             | A web, desktop, or mobile UI connected to an environment. The desktop app can also host a server. |
-| Project            | An environment-local workspace record rooted at a directory.                                      |
-| Workspace root     | The project's base filesystem directory on the environment.                                       |
-| Worktree           | A separate Git checkout a thread can use instead of the project's main checkout.                  |
-| Sibling repository | A Git repository in the same parent directory as a project's workspace root. Not a project.       |
-| Thread             | The durable conversation and work history for a project. It survives provider process exits.      |
-| Draft thread       | A new thread that lives only in the client until its first message is sent.                       |
-| Turn               | One user-to-agent cycle, a V2 run. Provider work can end before checkpoint and diff work settles. |
-| Activity           | A non-message timeline item, such as a tool action, approval, or failure.                         |
-| T3 home            | The base data directory. Runtime state normally lives under its `userdata` directory.             |
+| Term               | Meaning                                                                                                          |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| Environment        | One running server and the machine, credentials, workspace access, and state it owns.                            |
+| Client             | A web, desktop, or mobile UI connected to an environment. The desktop app can also host a server.                |
+| Project            | An environment-local workspace record rooted at a directory.                                                     |
+| Workspace root     | The project's base filesystem directory on the environment.                                                      |
+| Worktree           | A separate Git checkout a thread can use instead of the project's main checkout.                                 |
+| Sibling repository | A Git repository in the same parent directory as a project's workspace root. It may or may not be a project yet. |
+| Thread             | The durable conversation and work history for a project. It survives provider process exits.                     |
+| Draft thread       | A new thread that lives only in the client until its first message is sent.                                      |
+| Turn               | One user-to-agent cycle, a V2 run. Provider work can end before checkpoint and diff work settles.                |
+| Activity           | A non-message timeline item, such as a tool action, approval, or failure.                                        |
+| T3 home            | The base data directory. Runtime state normally lives under its `userdata` directory.                            |
 
 ## Orchestration
 
@@ -50,15 +50,16 @@ Terms whose meaning matters across T3 Code. Architecture and lifecycle constrain
 
 ## Pull requests
 
-| Term                 | Meaning                                                                                                                                                                                                                                                           |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Pull request link    | A persisted thread association identified by host, repository, and number. Links can cross projects within an environment and carry a server-maintained snapshot.                                                                                                 |
-| Pull request sync    | The worker that refreshes each distinct linked review once per cadence and discovers native stack layers. Explicit refreshes and failed stack reads trigger another read.                                                                                         |
-| Current pull request | The link used by single-review controls and older clients. Open work takes precedence; a completed single chain points at its top layer. Unrelated terminal links use the latest update.                                                                          |
-| Issue                | A tracked work item on a project's repository host, identified by host, repository, and number. Not a pull request, even where the host numbers both in one sequence. GitHub's "issue comment" on a pull request is a pull request comment, not an issue comment. |
-| Close reason         | Why a closed issue was closed: completed, not planned, or duplicate. A closed issue with no recorded reason reads as completed.                                                                                                                                   |
-| Sub-issue            | An issue the host records as part of another issue, its parent issue. Only the host's own relationship counts; a task list or "Part of #n" in a body does not make one. Not called a child issue.                                                                 |
-| Parent issue         | The issue a sub-issue belongs to. An issue has at most one parent issue and may itself be a sub-issue.                                                                                                                                                            |
+| Term                 | Meaning                                                                                                                                                                                                     |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Pull request link    | A persisted thread association identified by host, repository, and number. Links can cross projects within an environment and carry a server-maintained snapshot.                                           |
+| Pull request sync    | The worker that refreshes each distinct linked review once per cadence and discovers native stack layers. Explicit refreshes and failed stack reads trigger another read.                                   |
+| Current pull request | The link used by single-review controls and older clients. Open work takes precedence; a completed single chain points at its top layer. Unrelated terminal links use the latest update.                    |
+| Issue                | A work item in a project's issue tracker. Not a pull request, even where the host numbers both in one sequence. GitHub's "issue comment" on a pull request is a pull request comment, not an issue comment. |
+| Issue tracker        | Where a project's issues live: its Git host's own issues, or a connected standalone tracker such as Linear.                                                                                                 |
+| Close reason         | Why a closed issue was closed: completed, not planned, or duplicate. A closed issue with no recorded reason reads as completed.                                                                             |
+| Sub-issue            | An issue the host records as part of another issue, its parent issue. Only the host's own relationship counts; a task list or "Part of #n" in a body does not make one. Not called a child issue.           |
+| Parent issue         | The issue a sub-issue belongs to. An issue has at most one parent issue and may itself be a sub-issue.                                                                                                      |
 
 ## Composer context
 

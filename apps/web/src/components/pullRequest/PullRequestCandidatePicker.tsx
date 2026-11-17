@@ -1,5 +1,5 @@
 // Menu typeahead consumes search keystrokes; use a combobox.
-import type { ReactElement, ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import { Button } from "../ui/button";
 import {
@@ -16,7 +16,6 @@ import { PullRequestPeopleGhost } from "./PullRequestGhosts";
 export function PullRequestCandidatePicker<T>({
   icon,
   label,
-  trigger,
   allowed,
   disabledReason,
   open,
@@ -33,14 +32,11 @@ export function PullRequestCandidatePicker<T>({
   truncated,
   truncatedLabel,
   candidateKey,
-  disabled,
   onSelect,
   children,
 }: {
   icon: ReactNode;
   label: string;
-  /** Replaces the icon button. */
-  trigger?: ReactElement;
   allowed: boolean;
   disabledReason: string;
   open: boolean;
@@ -57,7 +53,6 @@ export function PullRequestCandidatePicker<T>({
   truncated: boolean;
   truncatedLabel: string;
   candidateKey: (candidate: T) => string;
-  disabled: boolean;
   onSelect: (candidate: T) => void;
   children: (candidate: T) => ReactNode;
 }) {
@@ -101,11 +96,9 @@ export function PullRequestCandidatePicker<T>({
     >
       <ComboboxTrigger
         render={
-          trigger ?? (
-            <Button size="icon-xs" variant="ghost" aria-label={label}>
-              {icon}
-            </Button>
-          )
+          <Button size="icon-xs" variant="ghost" aria-label={label}>
+            {icon}
+          </Button>
         }
       />
       <ComboboxPopup align="start" side="bottom" className="w-72">
@@ -128,13 +121,7 @@ export function PullRequestCandidatePicker<T>({
             </p>
           ) : (
             candidates.map((candidate, index) => (
-              <ComboboxItem
-                key={keys[index]}
-                hideIndicator
-                index={index}
-                value={keys[index]}
-                disabled={disabled}
-              >
+              <ComboboxItem key={keys[index]} hideIndicator index={index} value={keys[index]}>
                 {children(candidate)}
               </ComboboxItem>
             ))
