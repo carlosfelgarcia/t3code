@@ -1,4 +1,5 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
+import { findProjectByPath } from "@t3tools/client-runtime/state/projects";
 import type { SiblingRepository } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { CheckIcon } from "lucide-react";
@@ -46,9 +47,9 @@ export function useSiblingSelection(project: EnvironmentProject, selectedPath: s
   const siblingProject =
     sibling === null
       ? null
-      : (projects.find(
-          (entry) =>
-            entry.environmentId === project.environmentId && entry.workspaceRoot === sibling.path,
+      : (findProjectByPath(
+          projects.filter((entry) => entry.environmentId === project.environmentId),
+          sibling.path,
         ) ?? null);
   return { siblings, sibling, siblingProject };
 }

@@ -1,7 +1,5 @@
-import type { ContextMenuItem, IssueRepository } from "@t3tools/contracts";
+import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
-
-import { issueRepositoryKey } from "./issues/issues.logic";
 
 export type ThreadActionMenuId =
   | "find"
@@ -29,7 +27,6 @@ export type ThreadActionMenuId =
   | "copy-thread"
   | "copy-thread-id"
   | "open-issues"
-  | `open-issues:${string}`
   | "open-git-tree"
   | "archive"
   | "delete";
@@ -100,14 +97,12 @@ export interface ThreadActionMenuState {
   readonly canShareWithGuest?: boolean;
   /** A No project thread with its own folder, on a server that can promote it. */
   readonly canTurnIntoProject?: boolean;
-  /** GitHub repositories behind the thread's project; a fork has two. */
-  readonly issueRepositories?: ReadonlyArray<IssueRepository>;
+  readonly canOpenIssues?: boolean;
   readonly canOpenGitTree?: boolean;
 }
 
 /** Local navigation, read markers, and copying remain available to read-only clients. */
 export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean {
-  if (action.startsWith("open-issues")) return false;
   return ![
     "find",
     "new-thread-on-branch",
@@ -119,31 +114,9 @@ export function threadActionRequiresOperate(action: ThreadActionMenuId): boolean
     "copy-branch",
     "copy-thread",
     "copy-thread-id",
+    "open-issues",
     "open-git-tree",
   ].includes(action);
-}
-
-function openIssuesItems(
-  repositories: ReadonlyArray<IssueRepository>,
-): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
-  const [only] = repositories;
-  if (only === undefined) return [];
-  if (repositories.length === 1) {
-    return [
-      { id: `open-issues:${issueRepositoryKey(only)}`, label: "Open issues", icon: "circle-dot" },
-    ];
-  }
-  return [
-    {
-      id: "open-issues",
-      label: "Open issues",
-      icon: "circle-dot",
-      children: repositories.map((repository) => ({
-        id: `open-issues:${issueRepositoryKey(repository)}` as const,
-        label: repository.repository,
-      })),
-    },
-  ];
 }
 
 export function buildThreadActionMenuItems(
@@ -271,7 +244,9 @@ export function buildThreadActionMenuItems(
         { id: "copy-thread-id", label: "Thread ID", icon: "hash" },
       ],
     },
-    ...openIssuesItems(state.issueRepositories ?? []),
+    ...(state.canOpenIssues
+      ? [{ id: "open-issues" as const, label: "Open issues", icon: "circle-dot" }]
+      : []),
     ...(state.canOpenGitTree
       ? [{ id: "open-git-tree" as const, label: "Open Git Tree", icon: "git-graph" }]
       : []),

@@ -1,12 +1,4 @@
 import type {
-  IssueDetail,
-  IssueLabelChangeInput,
-  IssueListState,
-  IssueOperationError,
-  IssueRef,
-  IssueStateChangeInput,
-  IssueSummary,
-  PullRequestLabelCandidateList,
   SourceControlAppAccess,
   SourceControlProviderKind,
   SourceControlSignInError,
@@ -23,6 +15,7 @@ import type * as Scope from "effect/Scope";
 import type { SourceControlDefinition } from "../shared/definition.ts";
 
 import type { SourceControlProviderDiscoverySpec } from "./discovery.ts";
+import type { IssueTrackerApi } from "./IssueTracker.ts";
 import type { PullRequestProviderApi } from "./PullRequestProvider.ts";
 import type * as SourceControlHost from "./SourceControlHost.ts";
 import type * as SourceControlProvider from "./SourceControlProvider.ts";
@@ -56,43 +49,13 @@ export interface SourceControlSignIn {
   ) => Effect.Effect<SourceControlAppAccess["status"]>;
 }
 
-export interface SourceControlIssueListInput {
-  readonly host: string;
-  /** `owner/name` selectors, all on `host`. */
-  readonly repositories: ReadonlyArray<string>;
-  readonly state: IssueListState;
-  readonly labels: ReadonlyArray<string>;
-  readonly query: string | undefined;
-  readonly author: string | undefined;
-  readonly page: number;
-  readonly perPage: number;
-}
-
-/** Issue reads and edits. Only GitHub has them; there is no shared issue abstraction. */
-export interface SourceControlIssues {
-  /** Most recently updated first. Never includes pull requests. */
-  readonly list: (input: SourceControlIssueListInput) => Effect.Effect<
-    {
-      readonly issues: ReadonlyArray<IssueSummary>;
-      readonly hasMore: boolean;
-      /** Set when an empty first page searched one repository and its Issues are turned off. */
-      readonly issuesDisabled?: ReadonlyArray<string>;
-    },
-    IssueOperationError
-  >;
-  readonly detail: (ref: IssueRef) => Effect.Effect<IssueDetail, IssueOperationError>;
-  readonly labelCandidates: (
-    ref: IssueRef,
-  ) => Effect.Effect<PullRequestLabelCandidateList, IssueOperationError>;
-  readonly setLabels: (input: IssueLabelChangeInput) => Effect.Effect<void, IssueOperationError>;
-  readonly setState: (input: IssueStateChangeInput) => Effect.Effect<void, IssueOperationError>;
-}
-
 export interface SourceControlDriverInstance {
   readonly sourceControl: SourceControlProvider.SourceControlProvider["Service"];
   readonly discovery: SourceControlProviderDiscoverySpec;
   /** Null for a host whose pull requests this build cannot read. */
   readonly pullRequests: PullRequestProviderApi | null;
+  /** Absent for a host whose issues this build cannot read. */
+  readonly issues?: IssueTrackerApi;
   /**
    * Fetches media the definition's `mediaUrl` claimed, with the credential the host serves it
    * to. Null when the fetch went nowhere a response could come from, such as a redirect loop.
@@ -107,7 +70,6 @@ export interface SourceControlDriverInstance {
   readonly signIn?: SourceControlSignIn;
   /** Whether the server's account on `host` starred `repository` (`owner/name`). */
   readonly isRepositoryStarred?: (host: string, repository: string) => Effect.Effect<boolean>;
-  readonly issues?: SourceControlIssues;
   /** Stars `repository` as the server's account on `host`; false when the forge refused. */
   readonly starRepository?: (host: string, repository: string) => Effect.Effect<boolean>;
 }

@@ -14,6 +14,7 @@ import { getSourceControlPresentationForKind } from "~/sourceControlPresentation
 
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { PullRequestChecksPopover } from "./PullRequestChecksPopover";
+import { pullRequestPanelReference } from "./usePullRequestDetail";
 import type { EnvironmentPullRequestEntry } from "./pullRequestList.logic";
 import { openOnHostLabel, showPullRequestLinkContextMenu } from "./pullRequestLinkContextMenu";
 import {
@@ -31,11 +32,7 @@ const LABEL_SLOTS = [
   { overflow: "" },
 ] as const;
 
-export function PullRequestRowLabels({
-  labels,
-}: {
-  labels: EnvironmentPullRequestEntry["labels"];
-}) {
+function PullRequestRowLabels({ labels }: { labels: EnvironmentPullRequestEntry["labels"] }) {
   if (labels.length === 0) return null;
   return (
     <span className="flex min-w-0 items-center gap-1">
@@ -168,9 +165,8 @@ function PullRequestRowImpl({
                   checksState={entry.checksState}
                   environmentId={entry.environmentId}
                   reference={{
-                    projectId: entry.projectId,
-                    repository: entry.repository,
-                    number: entry.number,
+                    ...pullRequestPanelReference({ ...entry, host: entry.host.toLowerCase() }),
+                    allowStale: false,
                   }}
                 />
               )}

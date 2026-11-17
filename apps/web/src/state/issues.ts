@@ -1,34 +1,46 @@
-import { createIssueEnvironmentAtoms } from "@t3tools/client-runtime/state/issues";
+import {
+  createIssueEnvironmentAtoms,
+  createMergedIssueCandidatesAtoms,
+  createMergedIssueListAtoms,
+  type IssueCandidatesTarget,
+  type IssueListTarget,
+  type MergedIssueList,
+} from "@t3tools/client-runtime/state/issues";
+import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { type AsyncResult, Atom } from "effect/reactivity";
 
 import { connectionAtomRuntime } from "../connection/runtime";
+import { appAtomRegistry } from "../rpc/atomRegistry";
+import { formatEnvironmentQueryError } from "./query";
+
+export type { IssueListTarget };
 
 export const issueEnvironment = createIssueEnvironmentAtoms(connectionAtomRuntime);
 
-/** Several reads of one query as one value; equal inputs share the atom. */
-function queryList<Input, A, E>(
-  label: string,
-  query: (target: {
-    readonly environmentId: EnvironmentId;
-    readonly input: Input;
-  }) => Atom.Atom<AsyncResult.AsyncResult<A, E>>,
-) {
-  const family = Atom.family((key: string) => {
-    const { environmentId, inputs } = JSON.parse(key) as {
-      readonly environmentId: EnvironmentId | null;
-      readonly inputs: ReadonlyArray<Input>;
-    };
-    return Atom.make((get) =>
-      environmentId === null ? [] : inputs.map((input) => get(query({ environmentId, input }))),
-    ).pipe(Atom.withLabel(`${label}:${key}`));
-  });
-  return (environmentId: EnvironmentId | null, inputs: ReadonlyArray<Input>) =>
-    family(JSON.stringify({ environmentId, inputs: environmentId === null ? [] : inputs }));
+const mergedIssueLists = createMergedIssueListAtoms(
+  issueEnvironment.list,
+  formatEnvironmentQueryError,
+);
+
+/** The same listing read across every connected environment, as the pull-request page does. */
+export function useIssueList(
+  targets: ReadonlyArray<IssueListTarget>,
+): MergedIssueList & { readonly refresh: () => void } {
+  const view = useAtomValue(mergedIssueLists.atom(targets));
+  return { ...view, refresh: () => mergedIssueLists.refresh(appAtomRegistry, targets) };
 }
 
-export const issueListPages = queryList("issues:list-pages", issueEnvironment.list);
-export const issueLabelCandidateLists = queryList(
-  "issues:label-candidate-lists",
-  issueEnvironment.labelCandidates,
+/** After a write made beside the list, such as a state change in the detail panel. */
+export function refreshIssueLists(environmentId: EnvironmentId) {
+  mergedIssueLists.refreshEnvironment(appAtomRegistry, environmentId);
+}
+
+const mergedIssueCandidates = createMergedIssueCandidatesAtoms(
+  issueEnvironment.candidates,
+  formatEnvironmentQueryError,
 );
+
+/** The labels and people of every scope a list filter covers; no targets reads nothing. */
+export function useIssueFilterCandidates(targets: ReadonlyArray<IssueCandidatesTarget>) {
+  return useAtomValue(mergedIssueCandidates(targets));
+}
