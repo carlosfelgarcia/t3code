@@ -160,6 +160,36 @@ it("retains each thread's diff selection when returning from another thread or S
   });
 });
 
+it("a draft opens its branch diff in the right panel", async () => {
+  using _environment = installFakeEnvironment([]);
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  const draftId = DraftId.make("draft-changes");
+  const threadId = ThreadId.make("thread-draft-changes");
+  useComposerDraftStore
+    .getState()
+    .setProjectDraftThreadId(scopeProjectRef(ENVIRONMENT_ID, PROJECT_ID), draftId, { threadId });
+  useRightPanelStore.getState().open(scopeThreadRef(ENVIRONMENT_ID, threadId), "diff");
+  const router = getRouter(createMemoryHistory({ initialEntries: [`/draft/${draftId}`] }));
+  await router.load();
+  await using _app = await render(<AppRoot router={router} />, {
+    // AppRoot brings its own router.
+    router: false,
+  });
+  // The shell snapshot has arrived once the sidebar lists the project, so the connection is up.
+  await expect.element(page.getByText("render", { exact: true }).first()).toBeVisible();
+  await expect
+    .element(
+      page.getByRole("combobox", {
+        name: "Change comparison target. Currently Automatic",
+        exact: true,
+      }),
+    )
+    .toBeVisible();
+});
+
 it("a stashed prompt ending in a file chip restores with the chip", async () => {
   using _environment = installFakeEnvironment([]);
   __setClientSettingsForTests({

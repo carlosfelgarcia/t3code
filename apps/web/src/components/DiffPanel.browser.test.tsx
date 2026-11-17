@@ -21,13 +21,10 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
 import { act, render } from "../../test/render";
-import { makeThreadFixture } from "~/test-fixtures";
 
 type ResultAtom<A> = Atom.Atom<AsyncResult.AsyncResult<A, Error>>;
 
 const state = vi.hoisted(() => ({
-  thread: null as ReturnType<typeof makeThreadFixture> | null,
-  threadRef: null as ScopedThreadRef | null,
   previews: new Map<string | null, ResultAtom<ReviewDiffPreviewResult>>(),
   patch: null as unknown as ResultAtom<ReviewDiffPreviewSource>,
   diffFilesCollapsed: false,
@@ -60,7 +57,6 @@ vi.mock("~/state/vcs", () => ({
   },
 }));
 vi.mock("~/state/entities", () => ({
-  useQuietThreadShell: () => state.thread,
   useProject: () => ({ workspaceRoot: "/project", repositoryIdentity: null }),
   useThreadCheckpointSummaries: () => state.checkpoints,
   useQuietThreadVisibleTurnItems: () => [],
@@ -68,7 +64,6 @@ vi.mock("~/state/entities", () => ({
 vi.mock("~/state/filesystem", () => ({
   useFilesystemReadAccess: () => ({ canReadFiles: true, isPending: false, error: null }),
 }));
-vi.mock("~/hooks/useThreadRouteTarget", () => ({ useThreadRouteRef: () => state.threadRef }));
 vi.mock("~/hooks/useSettings", () => ({
   useClientSettings: (select: (settings: ClientSettings) => unknown) =>
     select({ ...DEFAULT_CLIENT_SETTINGS, diffFilesCollapsed: state.diffFilesCollapsed }),
@@ -135,17 +130,10 @@ function setup(failedBaseRef: string | null) {
     AsyncResult.initial(),
   );
   state.patch = patch;
-  state.threadRef = {
+  const threadRef: ScopedThreadRef = {
     environmentId: EnvironmentId.make("environment"),
     threadId: ThreadId.make("thread"),
   };
-  state.thread = makeThreadFixture({
-    ...state.threadRef,
-    id: state.threadRef.threadId,
-    projectId: ProjectId.make("project"),
-    branch: "dev",
-    worktreePath: cwd,
-  });
   state.previews.clear();
   state.previews.set(null, Atom.make(AsyncResult.success(preview())));
   state.previews.set("main", Atom.make(AsyncResult.success(preview())));
@@ -182,12 +170,12 @@ function setup(failedBaseRef: string | null) {
   state.localRefs = Atom.make(AsyncResult.success(refs(["dev", "main"], false)));
   state.remoteRefs = Atom.make(AsyncResult.success(refs(["origin/orphan"], true)));
   state.commits = Atom.make(AsyncResult.success({ commits: [], truncated: false }));
-  useDiffPanelStore.getState().selectBranchBaseRef(state.threadRef, failedBaseRef);
+  useDiffPanelStore.getState().selectBranchBaseRef(threadRef, failedBaseRef);
   const registry = AtomRegistry.make();
   return {
     registry,
     patch,
-    threadRef: state.threadRef,
+    threadRef,
     [Symbol.dispose]() {
       registry.dispose();
       reset();
@@ -214,7 +202,14 @@ it.each([
     using context = setup(failedBaseRef);
     await using screen = await render(
       <RegistryContext.Provider value={context.registry}>
-        <DiffPanel composerDraftTarget={context.threadRef} workspaceMutationId={null} visible />
+        <DiffPanel
+          threadRef={context.threadRef}
+          projectId={ProjectId.make("project")}
+          worktreePath={cwd}
+          composerDraftTarget={context.threadRef}
+          workspaceMutationId={null}
+          visible
+        />
       </RegistryContext.Provider>,
     );
     await expect.element(screen.getByText(errorMessage, { exact: true })).toBeVisible();
@@ -249,7 +244,14 @@ it.each([false, true])(
     await using screen = await render(
       <RegistryContext.Provider value={context.registry}>
         <div style={{ height: 600, display: "flex", flexDirection: "column" }}>
-          <DiffPanel composerDraftTarget={context.threadRef} workspaceMutationId={null} visible />
+          <DiffPanel
+            threadRef={context.threadRef}
+            projectId={ProjectId.make("project")}
+            worktreePath={cwd}
+            composerDraftTarget={context.threadRef}
+            workspaceMutationId={null}
+            visible
+          />
         </div>
       </RegistryContext.Provider>,
     );
@@ -293,7 +295,14 @@ it("says a turn diff cut off at the server's size limit is incomplete", async ()
   await using screen = await render(
     <RegistryContext.Provider value={context.registry}>
       <div style={{ height: 600, display: "flex", flexDirection: "column" }}>
-        <DiffPanel composerDraftTarget={context.threadRef} workspaceMutationId={null} visible />
+        <DiffPanel
+          threadRef={context.threadRef}
+          projectId={ProjectId.make("project")}
+          worktreePath={cwd}
+          composerDraftTarget={context.threadRef}
+          workspaceMutationId={null}
+          visible
+        />
       </div>
     </RegistryContext.Provider>,
   );
