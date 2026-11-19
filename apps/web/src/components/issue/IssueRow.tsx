@@ -1,5 +1,6 @@
 import type { EnvironmentIssueEntry } from "@t3tools/client-runtime/issue-list";
 import type { IssueRelationSummary } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 import { BanIcon, ListChecksIcon, MessageSquareIcon } from "lucide-react";
 import { memo } from "react";
 
@@ -118,6 +119,7 @@ export const IssueRow = memo(IssueRowImpl);
 const ROW_BLOCKERS_SHOWN = 3;
 
 function IssueRowRelations({ summary }: { summary: IssueRelationSummary }) {
+  const gt = useGT();
   const count = summary.openBlockerCount;
   const named = summary.openBlockers.slice(0, ROW_BLOCKERS_SHOWN);
   const hidden = count - named.length;
@@ -131,8 +133,18 @@ function IssueRowRelations({ summary }: { summary: IssueRelationSummary }) {
             <BanIcon aria-hidden className="size-3 shrink-0" />
             <span className="truncate">
               {named.length === 0
-                ? `Blocked by ${count} ${count === 1 ? "issue" : "issues"}`
-                : `Blocked by ${named.map((blocker) => blocker.displayKey).join(", ")}${hidden > 0 ? ` +${hidden}` : ""}`}
+                ? gt(
+                    "{count, plural, one {Blocked by {count} issue} other {Blocked by {count} issues}}",
+                    { count },
+                  )
+                : hidden > 0
+                  ? gt("Blocked by {keys} +{hidden}", {
+                      keys: named.map((blocker) => blocker.displayKey).join(", "),
+                      hidden,
+                    })
+                  : gt("Blocked by {keys}", {
+                      keys: named.map((blocker) => blocker.displayKey).join(", "),
+                    })}
             </span>
           </TooltipTrigger>
           <TooltipPopup>
@@ -144,8 +156,10 @@ function IssueRowRelations({ summary }: { summary: IssueRelationSummary }) {
             {count > summary.openBlockers.length ? (
               <div>
                 {summary.openBlockers.length === 0
-                  ? `${count} open ${count === 1 ? "issue" : "issues"}`
-                  : `and ${count - summary.openBlockers.length} more`}
+                  ? gt("{count, plural, one {{count} open issue} other {{count} open issues}}", {
+                      count,
+                    })
+                  : gt("and {count} more", { count: count - summary.openBlockers.length })}
               </div>
             ) : null}
           </TooltipPopup>
@@ -160,8 +174,10 @@ function IssueRowRelations({ summary }: { summary: IssueRelationSummary }) {
             </span>
           </TooltipTrigger>
           <TooltipPopup>
-            {summary.subIssuesCompleted} of {summary.subIssuesTotal}{" "}
-            {summary.subIssuesTotal === 1 ? "sub-issue" : "sub-issues"} completed
+            {gt(
+              "{total, plural, one {{completed} of {total} sub-issue completed} other {{completed} of {total} sub-issues completed}}",
+              { completed: summary.subIssuesCompleted, total: summary.subIssuesTotal },
+            )}
           </TooltipPopup>
         </Tooltip>
       ) : null}

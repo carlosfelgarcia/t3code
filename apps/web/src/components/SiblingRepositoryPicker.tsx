@@ -2,6 +2,7 @@ import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import { findProjectByPath } from "@t3tools/client-runtime/state/projects";
 import type { SiblingRepository } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import { T, useGT } from "gt-react";
 import { CheckIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -71,6 +72,7 @@ export function SiblingRepositoryPicker({
   selected: SiblingRepository | null;
   onSelect: (sibling: SiblingRepository | null) => void;
 }) {
+  const gt = useGT();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const needle = query.trim().toLowerCase();
@@ -101,7 +103,7 @@ export function SiblingRepositoryPicker({
         }}
       >
         <ComboboxTrigger
-          aria-label="Repository"
+          aria-label={gt("Repository")}
           title={selected?.path ?? ownPath}
           render={<SelectButton size="sm" />}
         >
@@ -109,12 +111,14 @@ export function SiblingRepositoryPicker({
         </ComboboxTrigger>
         <ComboboxPopup align="start" side="bottom" className="w-80">
           <ComboboxSearchInput
-            aria-label="Search repositories"
-            placeholder="Search repositories…"
+            aria-label={gt("Search repositories")}
+            placeholder={gt("Search repositories…")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
-          <ComboboxEmpty>No repositories match.</ComboboxEmpty>
+          <ComboboxEmpty>
+            <T>No repositories match.</T>
+          </ComboboxEmpty>
           <ComboboxList className="max-h-72">
             {options.map((option, index) => (
               <ComboboxItem

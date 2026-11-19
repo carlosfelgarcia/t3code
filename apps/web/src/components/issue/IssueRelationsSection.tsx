@@ -4,6 +4,7 @@ import type {
   IssueRelations,
   ScopedThreadRef,
 } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 import type { MouseEvent } from "react";
 
 import { useOpenIssueLink } from "~/lib/openIssueLink";
@@ -24,21 +25,28 @@ export function IssueRelationsSection({
   threadRef: ScopedThreadRef | null;
   issueUrl: string;
 }) {
+  const gt = useGT();
   const openIssueLink = useOpenIssueLink(
     threadRef ?? undefined,
     threadRef === null ? ISSUES_PANEL_REF : undefined,
   );
   const groups = [
-    { title: "Parent issue", rows: relations.parent === null ? [] : [relations.parent] },
+    { title: gt("Parent issue"), rows: relations.parent === null ? [] : [relations.parent] },
     {
       title:
         relations.subIssuesTotal > 0
-          ? `Sub-issues (${relations.subIssuesCompleted}/${relations.subIssuesTotal})`
-          : "Sub-issues",
+          ? gt("Sub-issues ({completed}/{total})", {
+              completed: relations.subIssuesCompleted,
+              total: relations.subIssuesTotal,
+            })
+          : gt("Sub-issues"),
       rows: relations.subIssues,
     },
-    { title: "Blocked by", rows: relations.blockedBy },
-    { title: "Blocking", rows: relations.blocking },
+    {
+      title: gt("Blocked by", { $context: "issues that block this issue" }),
+      rows: relations.blockedBy,
+    },
+    { title: gt("Blocking", { $context: "issues this issue blocks" }), rows: relations.blocking },
   ].filter((group) => group.rows.length > 0);
   if (groups.length === 0) return null;
 

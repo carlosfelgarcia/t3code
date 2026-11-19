@@ -7,8 +7,10 @@ import {
   type VcsCommitGraphCommit,
   type VcsRef,
 } from "@t3tools/contracts";
+import { msg } from "gt-react";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
+import { m } from "~/i18n/messages";
 import { useEnvironmentQuery } from "~/state/query";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { vcsEnvironment, vcsStatusRevalidation } from "~/state/vcs";
@@ -34,7 +36,7 @@ export function gitCommandErrorDetail(error: unknown): string {
     const detail = (error as { readonly detail: unknown }).detail;
     if (typeof detail === "string" && detail.length > 0) return detail;
   }
-  return error instanceof Error ? error.message : "The Git command failed.";
+  return error instanceof Error ? error.message : m(msg("The Git command failed."));
 }
 
 const REFS_PAGE_LIMIT = 200;

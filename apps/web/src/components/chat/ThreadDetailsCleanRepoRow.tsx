@@ -1,6 +1,7 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { T, useGT } from "gt-react";
 import { BrushCleaningIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -28,6 +29,7 @@ export function ThreadDetailsCleanRepoRow({
 }
 
 function CleanRepoRow({ project }: { project: EnvironmentProject }) {
+  const gt = useGT();
   const { canCleanRepo, cleanRepo } = useCleanRepo(project);
   const [starting, setStarting] = useState(false);
   const start = async () => {
@@ -35,7 +37,7 @@ function CleanRepoRow({ project }: { project: EnvironmentProject }) {
     await cleanRepo().catch((cause: unknown) =>
       toastManager.add({
         type: "error",
-        title: "Clean Repo failed",
+        title: gt("Clean Repo failed"),
         description: gitCommandErrorDetail(cause),
       }),
     );
@@ -50,8 +52,8 @@ function CleanRepoRow({ project }: { project: EnvironmentProject }) {
       disabled={!canCleanRepo || starting}
       title={
         canCleanRepo
-          ? "Start an agent thread in the main checkout that cleans up this repository"
-          : "Needs permission to start threads"
+          ? gt("Start an agent thread in the main checkout that cleans up this repository")
+          : gt("Needs permission to start threads")
       }
       onClick={() => void start()}
     >
@@ -60,7 +62,9 @@ function CleanRepoRow({ project }: { project: EnvironmentProject }) {
       ) : (
         <BrushCleaningIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} aria-hidden />
       )}
-      <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>Clean Repo</span>
+      <span className={THREAD_DETAILS_PANEL_LABEL_CLASS}>
+        <T>Clean Repo</T>
+      </span>
     </ThreadDetailsControl>
   );
 }

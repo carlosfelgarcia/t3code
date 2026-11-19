@@ -7,10 +7,12 @@ import type {
   ThreadId,
   ThreadIssueLink,
 } from "@t3tools/contracts";
+import { msg } from "gt-react";
 import { useState } from "react";
 
 import type { DraftId } from "~/composerDraftStore";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
+import { m } from "~/i18n/messages";
 
 import { writeHandoffToComposer } from "../pullRequest/usePullRequestActions";
 import { toastManager } from "../ui/toast";
@@ -30,7 +32,7 @@ function issueThreadPrompt(issue: IssueThreadSubject): string {
 
 export function addIssueToComposer(target: ScopedThreadRef | DraftId, issue: IssueThreadSubject) {
   writeHandoffToComposer(target, { prompt: issueThreadPrompt(issue) });
-  toastManager.add({ type: "success", title: "Added to the composer" });
+  toastManager.add({ type: "success", title: m(msg("Added to the composer")) });
 }
 
 // A draft has no server thread to link yet, so the link waits for its first send.
@@ -56,8 +58,8 @@ export function useStartIssueThread() {
     if (session === null) {
       toastManager.add({
         type: "error",
-        title: "Could not open a thread",
-        description: "Try again from the project.",
+        title: m(msg("Could not open a thread")),
+        description: m(msg("Try again from the project.")),
       });
       return;
     }
