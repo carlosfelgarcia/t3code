@@ -449,7 +449,8 @@ Writing to a tracker over a remote connection requires the `source-control:write
 A thread can also list its project's issues in its right panel: choose **Issues** in the thread's
 details card, **Open Issues in panel** in the command palette, or right-click the thread and
 choose **Open issues**. The tab opens on open issues, newest first, and remembers its filters for
-that thread. Selecting an issue opens it in the same panel.
+that thread. Selecting an issue opens it in the same panel. The issues already linked to the
+thread are listed above the project's issues, with their current state.
 
 Right-click an issue to start a thread from it, add it to the composer, link it to the thread,
 copy its link, or open it on the tracker. **Start thread** opens a draft in the issue's project with

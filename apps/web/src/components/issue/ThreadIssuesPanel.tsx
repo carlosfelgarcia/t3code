@@ -59,6 +59,7 @@ import {
   EmptyTitle,
 } from "~/components/ui/empty";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { ThreadDetailsIssueRows } from "~/components/chat/ThreadDetailsIssueRows";
 import type { DraftId } from "~/composerDraftStore";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
@@ -256,6 +257,7 @@ function IssueList({
   const resolve = useMessages();
   const environmentId = project.environmentId;
   const environment = useEnvironment(environmentId);
+  const linkedIssues = useThreadShell(threadRef)?.issues ?? [];
   const issuesSupported = environment?.serverConfig?.environment.capabilities.issues === true;
   const projects = useProjects();
   const [query, setQuery] = useState(filters.q ?? "");
@@ -320,7 +322,11 @@ function IssueList({
       anchor: key,
     }));
   const clearSelection = () => setSelection({ keys: new Set(), anchor: null });
-  const filterScopes = issueFilterScopes(held, projects);
+  // The panel lists one project, so label and assignee choices come from it alone.
+  const filterScopes = issueFilterScopes(held, projects, {
+    environmentId,
+    projectId: project.id,
+  });
 
   const activeSurface = useRightPanelStore((state) =>
     selectActiveRightPanelSurface(state.byThreadKey, threadRef),
@@ -566,6 +572,22 @@ function IssueList({
           }
         }}
       >
+        {linkedIssues.length > 0 ? (
+          <section
+            aria-label={gt("Linked issues")}
+            className="mb-3 flex flex-col border-b border-border/60 px-1 pb-2"
+          >
+            <h2 className="px-2 py-1 text-xs font-medium text-muted-foreground">
+              <T>Linked to this thread</T>
+            </h2>
+            <ThreadDetailsIssueRows
+              links={linkedIssues}
+              threadRef={threadRef}
+              compact={false}
+              mountScope="linked-items"
+            />
+          </section>
+        ) : null}
         {body}
       </div>
     </>
