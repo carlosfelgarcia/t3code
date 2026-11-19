@@ -455,6 +455,7 @@ function IssueList({
                     selected={selected}
                     showScope={showScope}
                     showTracker={false}
+                    wrapLabels
                     onSelect={openEntry}
                   />
                 </div>

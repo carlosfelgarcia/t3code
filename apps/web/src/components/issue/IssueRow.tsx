@@ -31,6 +31,7 @@ function IssueRowImpl({
   showScope,
   showTracker,
   environmentLabel,
+  wrapLabels = false,
   onSelect,
 }: {
   entry: EnvironmentIssueEntry;
@@ -41,6 +42,8 @@ function IssueRowImpl({
   showTracker: boolean;
   /** Names the server this row was read from, where the list spans more than one. */
   environmentLabel?: string | undefined;
+  /** Every label on its own wrapping line, for narrow lists where the meta line has no room. */
+  wrapLabels?: boolean;
   onSelect: (entry: IssueRowTarget) => void;
 }) {
   const tracker = issueTrackerPresentation(entry.tracker);
@@ -58,57 +61,68 @@ function IssueRowImpl({
         className={cn(PULL_REQUEST_ROW_CLASS, "@container/issue-row-meta px-3 py-2.5")}
       >
         <IssueStateGlyph state={entry.state} />
-        <PullRequestRowLines
-          number={<span className={PULL_REQUEST_ROW_NUMBER_CLASS}>{entry.displayKey}</span>}
-          title={entry.title}
-          status={
-            <>
-              {entry.assignees.length > 0 ? (
-                <span className="flex items-center -space-x-1">
-                  {entry.assignees.slice(0, 3).map((assignee) => (
-                    <PullRequestActorAvatar
-                      key={assignee.login}
-                      actor={assignee}
-                      className="ring-1 ring-background"
-                    />
-                  ))}
-                </span>
-              ) : null}
-              {entry.commentCount > 0 ? (
-                <span className="inline-flex items-center gap-0.5 tabular-nums">
-                  <MessageSquareIcon aria-hidden className="size-3" />
-                  {entry.commentCount}
-                </span>
-              ) : null}
-            </>
-          }
-          meta={
-            <>
-              <PullRequestRowAuthor actor={entry.author} />
-              {entry.relationSummary ? <IssueRowRelations summary={entry.relationSummary} /> : null}
-              {showTracker ? (
-                <span className="inline-flex shrink-0 items-center gap-1">
-                  <tracker.Icon aria-hidden className="size-3" />
-                  <span className="sr-only">{tracker.providerName}</span>
-                </span>
-              ) : null}
-              {showScope ? <span className="truncate">{entry.scope}</span> : null}
-              {environmentLabel ? <span className="truncate">{environmentLabel}</span> : null}
-              {entry.labels.length > 0 ? (
-                <span className="hidden min-w-0 items-center gap-1 @xl/issue-row-meta:flex">
-                  {entry.labels.slice(0, 3).map((label, index) => (
-                    <PullRequestLabelChip key={label.name} label={label}>
-                      {index === 2 && entry.labels.length > 3 ? (
-                        <span className="shrink-0">+{entry.labels.length - 3}</span>
-                      ) : null}
-                    </PullRequestLabelChip>
-                  ))}
-                </span>
-              ) : null}
-            </>
-          }
-          updatedAt={entry.updatedAt}
-        />
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <PullRequestRowLines
+            number={<span className={PULL_REQUEST_ROW_NUMBER_CLASS}>{entry.displayKey}</span>}
+            title={entry.title}
+            status={
+              <>
+                {entry.assignees.length > 0 ? (
+                  <span className="flex items-center -space-x-1">
+                    {entry.assignees.slice(0, 3).map((assignee) => (
+                      <PullRequestActorAvatar
+                        key={assignee.login}
+                        actor={assignee}
+                        className="ring-1 ring-background"
+                      />
+                    ))}
+                  </span>
+                ) : null}
+                {entry.commentCount > 0 ? (
+                  <span className="inline-flex items-center gap-0.5 tabular-nums">
+                    <MessageSquareIcon aria-hidden className="size-3" />
+                    {entry.commentCount}
+                  </span>
+                ) : null}
+              </>
+            }
+            meta={
+              <>
+                <PullRequestRowAuthor actor={entry.author} />
+                {entry.relationSummary ? (
+                  <IssueRowRelations summary={entry.relationSummary} />
+                ) : null}
+                {showTracker ? (
+                  <span className="inline-flex shrink-0 items-center gap-1">
+                    <tracker.Icon aria-hidden className="size-3" />
+                    <span className="sr-only">{tracker.providerName}</span>
+                  </span>
+                ) : null}
+                {showScope ? <span className="truncate">{entry.scope}</span> : null}
+                {environmentLabel ? <span className="truncate">{environmentLabel}</span> : null}
+                {!wrapLabels && entry.labels.length > 0 ? (
+                  <span className="hidden min-w-0 items-center gap-1 @xl/issue-row-meta:flex">
+                    {entry.labels.slice(0, 3).map((label, index) => (
+                      <PullRequestLabelChip key={label.name} label={label}>
+                        {index === 2 && entry.labels.length > 3 ? (
+                          <span className="shrink-0">+{entry.labels.length - 3}</span>
+                        ) : null}
+                      </PullRequestLabelChip>
+                    ))}
+                  </span>
+                ) : null}
+              </>
+            }
+            updatedAt={entry.updatedAt}
+          />
+          {wrapLabels && entry.labels.length > 0 ? (
+            <span className="flex flex-wrap gap-1">
+              {entry.labels.map((label) => (
+                <PullRequestLabelChip key={label.name} label={label} />
+              ))}
+            </span>
+          ) : null}
+        </span>
       </button>
     </div>
   );
