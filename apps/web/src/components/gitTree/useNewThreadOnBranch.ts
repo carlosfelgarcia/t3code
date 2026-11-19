@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import { AuthOrchestrationOperateScope, type EnvironmentId, type VcsRef } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 
 import { failureOf } from "~/hooks/useCleanRepo";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
@@ -24,6 +25,7 @@ export function useNewThreadOnBranch({
   name: string;
   project: EnvironmentProject | null;
 }) {
+  const gt = useGT();
   const handleNewThread = useNewThreadHandler();
   const createWorktree = useAtomCommand(vcsEnvironment.createWorktree, { reportFailure: false });
   const canStartThreads = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
@@ -33,11 +35,11 @@ export function useNewThreadOnBranch({
 
   /** Why a thread cannot start on `ref`, or `null` when it can. */
   const blockedReason = (ref: VcsRef): string | null => {
-    if (project === null) return `Add ${name} as a project to start a thread`;
-    if (!canStartThreads) return "Needs permission to start threads";
+    if (project === null) return gt("Add {name} as a project to start a thread", { name });
+    if (!canStartThreads) return gt("Needs permission to start threads");
     const checkout = resolveNewThreadCheckout({ ref, workspaceRoot: project.workspaceRoot });
     if (checkout.kind === "create-worktree" && !canCreateWorktree) {
-      return "Needs source control write access to create a worktree";
+      return gt("Needs source control write access to create a worktree");
     }
     return null;
   };

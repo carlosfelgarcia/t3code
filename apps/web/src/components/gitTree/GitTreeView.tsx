@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import type { LegendListRef } from "@legendapp/list/react";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, VcsRef } from "@t3tools/contracts";
+import { T, useGT, Var } from "gt-react";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -57,6 +58,7 @@ export function GitTreeView({
   project: EnvironmentProject | null;
   picker: React.ReactNode;
 }) {
+  const gt = useGT();
   const { data, error, loadingMore, reload, loadMore } = useGitTreeData(environmentId, cwd);
   const [running, setRunning] = useState<Operation | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -87,31 +89,37 @@ export function GitTreeView({
   };
 
   const runPull = () =>
-    run("pull", "Pull failed", async () => {
+    run("pull", gt("Pull failed"), async () => {
       const result = await pull({ environmentId, input: { cwd } });
       if (result._tag === "Failure") throw failureOf(result);
       return result.value.status === "pulled"
-        ? `Pulled ${result.value.refName}`
-        : `${result.value.refName} is up to date`;
+        ? gt("Pulled {branch}", { branch: result.value.refName })
+        : gt("{branch} is up to date", { branch: result.value.refName });
     });
   const runPush = () =>
-    run("push", "Push failed", async () => {
+    run("push", gt("Push failed"), async () => {
       const result = await push({ environmentId, input: { cwd } });
       if (result._tag === "Failure") throw failureOf(result);
-      return result.value.status === "pushed"
-        ? `Pushed ${result.value.refName}${result.value.upstreamRef ? ` to ${result.value.upstreamRef}` : ""}`
-        : `${result.value.refName} is up to date`;
+      if (result.value.status !== "pushed") {
+        return gt("{branch} is up to date", { branch: result.value.refName });
+      }
+      return result.value.upstreamRef
+        ? gt("Pushed {branch} to {upstream}", {
+            branch: result.value.refName,
+            upstream: result.value.upstreamRef,
+          })
+        : gt("Pushed {branch}", { branch: result.value.refName });
     });
   const runFetchPrune = () =>
-    run("fetch", "Fetch failed", async () => {
+    run("fetch", gt("Fetch failed"), async () => {
       const result = await fetchPrune({ environmentId, input: { cwd } });
       if (result._tag === "Failure") throw failureOf(result);
-      return "Fetched and pruned remotes";
+      return gt("Fetched and pruned remotes");
     });
-  const runRefresh = () => run("refresh", "Refresh failed", async () => null);
+  const runRefresh = () => run("refresh", gt("Refresh failed"), async () => null);
 
   const runCleanRepo = (cleanRepo: () => Promise<void>) =>
-    run("clean", "Clean Repo failed", async () => {
+    run("clean", gt("Clean Repo failed"), async () => {
       await cleanRepo();
       return null;
     });
@@ -124,7 +132,7 @@ export function GitTreeView({
     });
     setDeleting(null);
     if (result._tag === "Success") {
-      toastManager.add({ type: "success", title: `Deleted ${ref.name}` });
+      toastManager.add({ type: "success", title: gt("Deleted {branch}", { branch: ref.name }) });
       await reload();
       return;
     }
@@ -135,7 +143,10 @@ export function GitTreeView({
         : undefined;
     if (!force && reason === "branch_not_merged") {
       const confirmed = await requestConfirmDialog(
-        `Force delete ${ref.name}?\n${ref.name} has commits that are not merged into its upstream or HEAD. Force deleting discards them.`,
+        `${gt("Force delete {branch}?", { branch: ref.name })}\n${gt(
+          "{branch} has commits that are not merged into its upstream or HEAD. Force deleting discards them.",
+          { branch: ref.name },
+        )}`,
         { variant: "destructive" },
       );
       if (confirmed === true) await removeBranch(ref, true);
@@ -143,7 +154,7 @@ export function GitTreeView({
     }
     toastManager.add({
       type: "error",
-      title: `Could not delete ${ref.name}`,
+      title: gt("Could not delete {branch}", { branch: ref.name }),
       description: gitCommandErrorDetail(failure),
     });
     await reload();
@@ -160,7 +171,7 @@ export function GitTreeView({
     if (failure === null) return;
     toastManager.add({
       type: "error",
-      title: `Could not start a thread on ${ref.name}`,
+      title: gt("Could not start a thread on {branch}", { branch: ref.name }),
       description: failure,
     });
     await reload();
@@ -182,7 +193,7 @@ export function GitTreeView({
     if (index !== -1) void listRef.current?.scrollToIndex({ index, animated: false });
   };
   const busy = running !== null;
-  const writeTitle = canWrite ? undefined : "Needs source control write access";
+  const writeTitle = canWrite ? undefined : gt("Needs source control write access");
   const branchBusy = deleting !== null || opening !== null;
   const currentBlockedReason = currentRef === null ? null : newThread.blockedReason(currentRef);
 
@@ -193,31 +204,31 @@ export function GitTreeView({
         size="sm"
         variant="outline"
         disabled={!canWrite || busy || currentRef === null}
-        title={writeTitle ?? "Fast-forward the current branch from its upstream"}
+        title={writeTitle ?? gt("Fast-forward the current branch from its upstream")}
         onClick={() => void runPull()}
       >
         {running === "pull" ? <Spinner aria-hidden /> : <ArrowDownIcon aria-hidden />}
-        Pull
+        {gt("Pull")}
       </Button>
       <Button
         size="sm"
         variant="outline"
         disabled={!canWrite || busy || currentRef === null}
-        title={writeTitle ?? "Push the current branch, setting its upstream if needed"}
+        title={writeTitle ?? gt("Push the current branch, setting its upstream if needed")}
         onClick={() => void runPush()}
       >
         {running === "push" ? <Spinner aria-hidden /> : <ArrowUpIcon aria-hidden />}
-        Push
+        {gt("Push", { $context: "verb, git action" })}
       </Button>
       <Button
         size="sm"
         variant="outline"
         disabled={!canWrite || busy || data?.isRepo !== true}
-        title={writeTitle ?? "Fetch every remote and remove stale remote-tracking branches"}
+        title={writeTitle ?? gt("Fetch every remote and remove stale remote-tracking branches")}
         onClick={() => void runFetchPrune()}
       >
         {running === "fetch" ? <Spinner aria-hidden /> : <RefreshCwIcon aria-hidden />}
-        Fetch & prune
+        <T>Fetch & prune</T>
       </Button>
       <Button
         size="sm"
@@ -225,8 +236,9 @@ export function GitTreeView({
         disabled={busy || branchBusy || currentRef === null || currentBlockedReason !== null}
         title={
           currentRef === null
-            ? "Check out a branch to start a thread on it"
-            : (currentBlockedReason ?? `Start a new thread on ${currentRef.name}`)
+            ? gt("Check out a branch to start a thread on it")
+            : (currentBlockedReason ??
+              gt("Start a new thread on {branch}", { branch: currentRef.name }))
         }
         onClick={() => {
           if (currentRef !== null) void openThread(currentRef);
@@ -237,12 +249,17 @@ export function GitTreeView({
         ) : (
           <MessageSquarePlusIcon aria-hidden />
         )}
-        New thread
+        {gt("New thread")}
       </Button>
       {project === null ? (
-        <Button size="sm" variant="outline" disabled title={`Add ${name} as a project to clean it`}>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled
+          title={gt("Add {name} as a project to clean it", { name })}
+        >
           <BrushCleaningIcon aria-hidden />
-          Clean Repo
+          {gt("Clean Repo")}
         </Button>
       ) : (
         <CleanRepoButton
@@ -255,7 +272,7 @@ export function GitTreeView({
       <Button
         size="icon-sm"
         variant="ghost"
-        aria-label="Refresh Git tree"
+        aria-label={gt("Refresh Git tree")}
         disabled={busy}
         onClick={() => void runRefresh()}
       >
@@ -268,19 +285,25 @@ export function GitTreeView({
     if (data === null) {
       return error === null ? (
         <PageMessage>
-          <Spinner aria-hidden /> Loading repository…
+          <Spinner aria-hidden /> <T>Loading repository…</T>
         </PageMessage>
       ) : (
         <PageMessage>{error}</PageMessage>
       );
     }
     if (!data.isRepo) {
-      return <PageMessage>{name} is not a Git repository.</PageMessage>;
+      return (
+        <PageMessage>
+          <T>
+            <Var>{name}</Var> is not a Git repository.
+          </T>
+        </PageMessage>
+      );
     }
     return (
       <div className="@container/git-tree flex min-h-0 flex-1 border-t border-border/60">
         <aside
-          aria-label="Branches"
+          aria-label={gt("Branches")}
           className="flex w-56 shrink-0 flex-col overflow-y-auto border-r border-border/60 py-2 @2xl/git-tree:w-72"
         >
           {data.refs.map((ref) => (
@@ -298,7 +321,9 @@ export function GitTreeView({
             />
           ))}
           {data.refs.length === 0 ? (
-            <p className="px-3 text-xs text-muted-foreground">No local branches yet.</p>
+            <p className="px-3 text-xs text-muted-foreground">
+              <T>No local branches yet.</T>
+            </p>
           ) : null}
         </aside>
         <div className="flex min-w-0 flex-1 flex-col">
@@ -308,7 +333,9 @@ export function GitTreeView({
             </p>
           )}
           {items.length === 0 ? (
-            <PageMessage>No commits yet.</PageMessage>
+            <PageMessage>
+              <T>No commits yet.</T>
+            </PageMessage>
           ) : (
             <GitTreeGraph
               items={items}
@@ -326,7 +353,7 @@ export function GitTreeView({
                       onClick={() => void loadMore()}
                     >
                       {loadingMore ? <Spinner aria-hidden /> : null}
-                      Load more
+                      <T>Load more</T>
                     </Button>
                   </div>
                 )
@@ -367,14 +394,16 @@ function BranchRow({
   onDelete: () => void;
   onOpenThread: () => void;
 }) {
+  const gt = useGT();
   // The main checkout's own branch is `current`; any other path is a thread's worktree.
   const inWorktree = branch.worktreePath !== null && !branch.current;
   const upstream = branch.upstreamRef?.replace(/^refs\/(?:remotes|heads)\//, "");
   const deleteTitle = branch.current
-    ? "The current branch cannot be deleted"
+    ? gt("The current branch cannot be deleted")
     : inWorktree
-      ? `Checked out in ${branch.worktreePath}`
-      : `Delete ${branch.name}`;
+      ? gt("Checked out in {path}", { path: branch.worktreePath })
+      : gt("Delete {name}", { name: branch.name });
+  const newThreadLabel = gt("New thread on {branch}", { branch: branch.name });
   return (
     <div className="group flex items-center gap-1 px-2">
       <button
@@ -391,10 +420,14 @@ function BranchRow({
             )}
           />
           <span className={cn("truncate", branch.current && "font-medium")}>{branch.name}</span>
-          {branch.current ? <Badge variant="info">current</Badge> : null}
+          {branch.current ? (
+            <Badge variant="info">
+              {gt("current", { $context: "git ref badge, the checked-out branch" })}
+            </Badge>
+          ) : null}
           {inWorktree ? (
             <FolderTreeIcon
-              aria-label={`Checked out in ${branch.worktreePath}`}
+              aria-label={gt("Checked out in {path}", { path: branch.worktreePath })}
               className="size-3.5 shrink-0 text-muted-foreground"
             />
           ) : null}
@@ -403,14 +436,20 @@ function BranchRow({
           <span className="flex w-full min-w-0 items-center gap-1.5 pl-5 text-xs text-muted-foreground">
             <span className="truncate">{upstream}</span>
             {branch.upstreamGone ? (
-              <Badge variant="warning">gone</Badge>
+              <Badge variant="warning">
+                <T context="git upstream badge, the remote branch was deleted">gone</T>
+              </Badge>
             ) : (
               <>
                 {branch.ahead ? (
-                  <span aria-label={`${branch.ahead} to push`}>↑{branch.ahead}</span>
+                  <span aria-label={gt("{count} to push", { count: branch.ahead })}>
+                    ↑{branch.ahead}
+                  </span>
                 ) : null}
                 {branch.behind ? (
-                  <span aria-label={`${branch.behind} to pull`}>↓{branch.behind}</span>
+                  <span aria-label={gt("{count} to pull", { count: branch.behind })}>
+                    ↓{branch.behind}
+                  </span>
                 ) : null}
               </>
             )}
@@ -420,8 +459,8 @@ function BranchRow({
       <Button
         size="icon-sm"
         variant="ghost"
-        aria-label={`New thread on ${branch.name}`}
-        title={newThreadBlockedReason ?? `New thread on ${branch.name}`}
+        aria-label={newThreadLabel}
+        title={newThreadBlockedReason ?? newThreadLabel}
         disabled={!canOpenThread || newThreadBlockedReason !== null}
         onClick={onOpenThread}
       >
@@ -430,7 +469,7 @@ function BranchRow({
       <Button
         size="icon-sm"
         variant="ghost"
-        aria-label={`Delete ${branch.name}`}
+        aria-label={gt("Delete {name}", { name: branch.name })}
         title={deleteTitle}
         disabled={!canDelete || branch.current || inWorktree}
         onClick={onDelete}
@@ -452,6 +491,7 @@ function CleanRepoButton({
   running: boolean;
   onClean: (cleanRepo: () => Promise<void>) => void;
 }) {
+  const gt = useGT();
   const { canCleanRepo, cleanRepo } = useCleanRepo(project);
   return (
     <Button
@@ -460,13 +500,13 @@ function CleanRepoButton({
       disabled={!canCleanRepo || disabled}
       title={
         canCleanRepo
-          ? "Start an agent thread in the main checkout that cleans up this repository"
-          : "Needs permission to start threads"
+          ? gt("Start an agent thread in the main checkout that cleans up this repository")
+          : gt("Needs permission to start threads")
       }
       onClick={() => onClean(cleanRepo)}
     >
       {running ? <Spinner aria-hidden /> : <BrushCleaningIcon aria-hidden />}
-      Clean Repo
+      {gt("Clean Repo")}
     </Button>
   );
 }

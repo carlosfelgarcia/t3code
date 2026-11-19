@@ -19,6 +19,7 @@ import ProjectScriptsControl, {
   type NewProjectScriptInput,
   type ProjectScriptActionResult,
 } from "../ProjectScriptsControl";
+import { T, useGT } from "gt-react";
 import { memo, useState, type ComponentProps } from "react";
 import { ThreadDetailsCard } from "./ThreadDetailsCard";
 import { ThreadDetailsCleanRepoRow } from "./ThreadDetailsCleanRepoRow";
@@ -99,6 +100,7 @@ interface ThreadDetailsPanelProps extends Pick<
 
 export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
   const visible = useClientSettings(resolveThreadDetailsVisibility);
+  const gt = useGT();
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const fileScripts = useT3ProjectFileScripts(
     props.environmentId,
@@ -191,7 +193,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
               {show.environment || show.openIn || show.scripts ? (
                 <ThreadDetailsSection
                   headingId="thread-details-workspace-heading"
-                  title="Workspace"
+                  title={gt("Workspace")}
                   separated={false}
                   showHeading={false}
                 >
@@ -246,7 +248,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
               show.cleanRepo ? (
                 <ThreadDetailsSection
                   headingId="thread-details-version-control-heading"
-                  title="Version Control"
+                  title={gt("Version Control")}
                   showHeading={false}
                   separated={density === "full"}
                 >
@@ -276,16 +278,18 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                     {show.issues ? (
                       <ThreadDetailsViewRow
                         Icon={CircleDotIcon}
-                        label="Issues"
-                        title="Show this repository's GitHub issues in the panel"
+                        label={gt("Issues")}
+                        title={gt("Show this repository's GitHub issues in the panel")}
                         onOpen={props.onOpenIssues}
                       />
                     ) : null}
                     {show.gitTree ? (
                       <ThreadDetailsViewRow
                         Icon={GitGraphIcon}
-                        label="Git Tree"
-                        title="Show the commit graph and branches of this thread's checkout in the panel"
+                        label={gt("Git Tree")}
+                        title={gt(
+                          "Show the commit graph and branches of this thread's checkout in the panel",
+                        )}
                         onOpen={props.onOpenGitTree}
                       />
                     ) : null}
@@ -339,7 +343,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                 >
                   <SlidersHorizontalIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} aria-hidden />
                   <span className={cn("ml-0.5", THREAD_DETAILS_PANEL_LABEL_CLASS)}>
-                    Choose what to show
+                    <T>Choose what to show</T>
                   </span>
                 </ThreadDetailsControl>
               </div>

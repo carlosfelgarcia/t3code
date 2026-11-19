@@ -37,6 +37,7 @@ import {
   UserCheckIcon,
   UsersIcon,
 } from "lucide-react";
+import { msg, T, useGT, useMessages } from "gt-react";
 import { Fragment, useState } from "react";
 
 import { IssueRow, type IssueRowTarget } from "~/components/issue/IssueRow";
@@ -58,10 +59,12 @@ import {
   EmptyTitle,
 } from "~/components/ui/empty";
 import { RefreshIcon } from "~/components/ui/refresh-icon";
+import { ThreadDetailsIssueRows } from "~/components/chat/ThreadDetailsIssueRows";
 import type { DraftId } from "~/composerDraftStore";
 import { writeTextToClipboard } from "~/hooks/useCopyToClipboard";
 import { useLiveRefresh } from "~/hooks/useLiveRefresh";
 import { readLocalApi } from "~/localApi";
+import { m } from "~/i18n/messages";
 import { newProjectId } from "~/lib/utils";
 import {
   type IssuesPanelSurface,
@@ -81,26 +84,31 @@ import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { SiblingRepositoryPicker, useSiblingSelection } from "../SiblingRepositoryPicker";
+import { resolveFilterOptions } from "../pullRequest/pullRequestListOptions";
 import { toastManager } from "../ui/toast";
 import { IssueFiltersMenu } from "./IssueListFilterPickers";
 import { addIssueToComposer, useStartIssueThread } from "./issueThreads";
 
 const STATE_OPTIONS = [
-  { value: "open", label: "Open", Icon: IssueGlyph.issue },
-  { value: "closed", label: "Closed", Icon: CircleCheckIcon },
-  { value: "all", label: "All", Icon: LayersIcon },
+  { value: "open", label: msg("Open", { $context: "issue state" }), Icon: IssueGlyph.issue },
+  { value: "closed", label: msg("Closed", { $context: "issue state" }), Icon: CircleCheckIcon },
+  { value: "all", label: msg("All", { $context: "issue filter" }), Icon: LayersIcon },
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<IssueListState>>;
 
 const INVOLVEMENT_OPTIONS = [
-  { value: "all", label: "Everyone", Icon: UsersIcon },
-  { value: "assigned", label: "Assigned to me", Icon: UserCheckIcon },
-  { value: "authored", label: "Opened by me", Icon: PenLineIcon },
-  { value: "mentioned", label: "Mentioning me", Icon: AtSignIcon },
+  { value: "all", label: msg("Everyone", { $context: "issue filter" }), Icon: UsersIcon },
+  { value: "assigned", label: msg("Assigned to me"), Icon: UserCheckIcon },
+  { value: "authored", label: msg("Opened by me"), Icon: PenLineIcon },
+  { value: "mentioned", label: msg("Mentioning me"), Icon: AtSignIcon },
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<IssueInvolvement>>;
 
 const SORT_OPTIONS = [
-  { value: "created", label: "Newest", Icon: CalendarArrowDownIcon },
-  { value: "updated", label: "Recently updated", Icon: ClockIcon },
+  {
+    value: "created",
+    label: msg("Newest", { $context: "sort order" }),
+    Icon: CalendarArrowDownIcon,
+  },
+  { value: "updated", label: msg("Recently updated"), Icon: ClockIcon },
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<IssueListSort>>;
 
 const PAGE_SIZE = 50;
@@ -187,6 +195,7 @@ function AddSiblingAsProject({
   environmentId: EnvironmentId;
   sibling: SiblingRepository;
 }) {
+  const gt = useGT();
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -206,7 +215,9 @@ function AddSiblingAsProject({
     setPending(false);
     if (result._tag === "Failure") {
       const failure = squashAtomCommandFailure(result);
-      setError(failure instanceof Error ? failure.message : "T3 Code could not add the project.");
+      setError(
+        failure instanceof Error ? failure.message : gt("T3 Code could not add the project."),
+      );
     }
   };
   return (
@@ -215,13 +226,13 @@ function AddSiblingAsProject({
         <IssueGlyph.issue />
       </EmptyMedia>
       <EmptyHeader>
-        <EmptyTitle>{sibling.name} is not a project yet</EmptyTitle>
+        <EmptyTitle>{gt("{name} is not a project yet", { name: sibling.name })}</EmptyTitle>
         <EmptyDescription>
-          {error ?? "Add it as a project to list its issues. It will show in the sidebar."}
+          {error ?? gt("Add it as a project to list its issues. It will show in the sidebar.")}
         </EmptyDescription>
       </EmptyHeader>
       <Button size="sm" disabled={pending} onClick={() => void add()}>
-        {pending ? "Adding…" : "Add as project"}
+        {pending ? gt("Adding…") : gt("Add as project")}
       </Button>
     </Empty>
   );
@@ -242,8 +253,11 @@ function IssueList({
   onFilters: (filters: IssueListPreferences) => void;
   picker: React.ReactNode;
 }) {
+  const gt = useGT();
+  const resolve = useMessages();
   const environmentId = project.environmentId;
   const environment = useEnvironment(environmentId);
+  const linkedIssues = useThreadShell(threadRef)?.issues ?? [];
   const issuesSupported = environment?.serverConfig?.environment.capabilities.issues === true;
   const projects = useProjects();
   const [query, setQuery] = useState(filters.q ?? "");
@@ -282,7 +296,10 @@ function IssueList({
         continueIssuePage(
           page,
           result._tag === "Failure"
-            ? { failure: failure instanceof Error ? failure.message : "The next page failed." }
+            ? {
+                failure:
+                  failure instanceof Error ? failure.message : m(msg("The next page failed.")),
+              }
             : result.value,
           cursors,
         ),
@@ -305,7 +322,11 @@ function IssueList({
       anchor: key,
     }));
   const clearSelection = () => setSelection({ keys: new Set(), anchor: null });
-  const filterScopes = issueFilterScopes(held, projects);
+  // The panel lists one project, so label and assignee choices come from it alone.
+  const filterScopes = issueFilterScopes(held, projects, {
+    environmentId,
+    projectId: project.id,
+  });
 
   const activeSurface = useRightPanelStore((state) =>
     selectActiveRightPanelSurface(state.byThreadKey, threadRef),
@@ -341,8 +362,8 @@ function IssueList({
   const noneAnswered = list.answers.length === 0;
   const body = !issuesSupported ? (
     <PullRequestsUnavailableState
-      title="Issues unavailable"
-      error="Update this environment's T3 Code server to browse issues."
+      title={gt("Issues unavailable")}
+      error={gt("Update this environment's T3 Code server to browse issues.")}
     />
   ) : noneAnswered && list.isPending ? (
     <PullRequestListGhost />
@@ -358,9 +379,13 @@ function IssueList({
         <IssueGlyph.issue />
       </EmptyMedia>
       <EmptyHeader>
-        <EmptyTitle>No issue tracker</EmptyTitle>
+        <EmptyTitle>
+          <T>No issue tracker</T>
+        </EmptyTitle>
         <EmptyDescription>
-          {project.title} has no remote on a supported tracker, and no tracker is bound to it.
+          {gt("{project} has no remote on a supported tracker, and no tracker is bound to it.", {
+            project: project.title,
+          })}
         </EmptyDescription>
       </EmptyHeader>
     </Empty>
@@ -379,7 +404,7 @@ function IssueList({
             ) : null}
             {!group.tracker.configured ? (
               <p className="px-3 text-sm text-muted-foreground">
-                {group.tracker.detail ?? "This tracker cannot be read right now."}
+                {group.tracker.detail ?? gt("This tracker cannot be read right now.")}
               </p>
             ) : null}
             {group.errors.map((error) => (
@@ -389,7 +414,11 @@ function IssueList({
             ))}
             {group.tracker.configured && group.rows.length === 0 && group.errors.length === 0 ? (
               <p className="px-3 text-sm text-muted-foreground">
-                {debouncedQuery ? "Nothing matches that." : "No issues under these filters."}
+                {debouncedQuery ? (
+                  <T>Nothing matches that.</T>
+                ) : (
+                  <T>No issues under these filters.</T>
+                )}
               </p>
             ) : null}
             {group.rows.map((row) => {
@@ -417,7 +446,7 @@ function IssueList({
                   }}
                 >
                   <Checkbox
-                    aria-label={`Select ${row.displayKey}`}
+                    aria-label={gt("Select {key}", { key: row.displayKey })}
                     checked={selection.keys.has(key)}
                     onCheckedChange={() => toggleSelected(key, false)}
                   />
@@ -426,6 +455,7 @@ function IssueList({
                     selected={selected}
                     showScope={showScope}
                     showTracker={false}
+                    wrapLabels
                     onSelect={openEntry}
                   />
                 </div>
@@ -445,11 +475,13 @@ function IssueList({
                     disabled={loadingMore !== null}
                     onClick={() => void loadMore(group.tracker.host)}
                   >
-                    {loadingMore === group.tracker.host
-                      ? "Loading…"
-                      : moreFailure === null
-                        ? "Load more"
-                        : "Retry"}
+                    {loadingMore === group.tracker.host ? (
+                      <T>Loading…</T>
+                    ) : moreFailure === null ? (
+                      <T>Load more</T>
+                    ) : (
+                      <T>Retry</T>
+                    )}
                   </Button>
                 </Fragment>
               );
@@ -467,8 +499,8 @@ function IssueList({
         <div className="min-w-32 flex-1">
           <PullRequestSearchInput
             value={query}
-            label="Search issues"
-            placeholder="Search issues"
+            label={gt("Search issues")}
+            placeholder={gt("Search issues")}
             busy={query !== debouncedQuery || (debouncedQuery.length > 0 && list.isPending)}
             onChange={(next) => {
               clearSelection();
@@ -478,31 +510,35 @@ function IssueList({
           />
         </div>
         <PullRequestCompactFilterMenu
-          label="Sort issues"
+          label={gt("Sort issues")}
           triggerIcon={<ArrowDownUpIcon aria-hidden className="size-4" />}
-          triggerLabel="Sort"
+          triggerLabel={gt("Sort", { $context: "verb, button that sorts a list" })}
           outlined
           value={sort}
-          options={SORT_OPTIONS}
+          options={resolveFilterOptions(SORT_OPTIONS, resolve)}
           onChange={(order) => update({ order: order === "created" ? "created" : undefined })}
         />
         <IssueFiltersMenu
           state={filters.status}
-          stateOptions={STATE_OPTIONS}
+          stateOptions={resolveFilterOptions(STATE_OPTIONS, resolve)}
           onState={(status) => update({ status })}
           involvement={filters.who}
-          involvementOptions={INVOLVEMENT_OPTIONS}
+          involvementOptions={resolveFilterOptions(INVOLVEMENT_OPTIONS, resolve)}
           onInvolvement={(who) => update({ who })}
           scopes={filterScopes}
           labels={filters.label ?? []}
           onLabels={(label) => update({ label })}
           assignee={filters.assignee}
           onAssignee={(assignee) => update({ assignee })}
+          // The sibling picker chooses the repository; the panel never lists several projects.
+          projects={[]}
+          project={undefined}
+          onProject={() => undefined}
         />
         <Button
           size="icon"
           variant="outline"
-          aria-label="Refresh issues"
+          aria-label={gt("Refresh issues")}
           onClick={list.refresh}
           disabled={list.isPending}
         >
@@ -511,7 +547,9 @@ function IssueList({
       </div>
       {selectedRows.length > 0 ? (
         <div className="flex items-center gap-2 border-b px-3 py-1.5 text-xs">
-          <span className="text-muted-foreground tabular-nums">{selectedRows.length} selected</span>
+          <span className="text-muted-foreground tabular-nums">
+            {gt("{count} selected", { count: selectedRows.length })}
+          </span>
           <IssueBulkLabelMenu environmentId={environmentId} rows={selectedRows} />
           <span className="flex-1" />
           <Button
@@ -519,10 +557,10 @@ function IssueList({
             variant="ghost"
             onClick={() => setSelection({ keys: new Set(orderedKeys), anchor: selection.anchor })}
           >
-            Select all
+            <T>Select all</T>
           </Button>
           <Button size="xs" variant="ghost" onClick={clearSelection}>
-            Clear
+            <T context="verb, clears a selection">Clear</T>
           </Button>
         </div>
       ) : null}
@@ -535,6 +573,22 @@ function IssueList({
           }
         }}
       >
+        {linkedIssues.length > 0 ? (
+          <section
+            aria-label={gt("Linked issues")}
+            className="mb-3 flex flex-col border-b border-border/60 px-1 pb-2"
+          >
+            <h2 className="px-2 py-1 text-xs font-medium text-muted-foreground">
+              <T>Linked to this thread</T>
+            </h2>
+            <ThreadDetailsIssueRows
+              links={linkedIssues}
+              threadRef={threadRef}
+              compact={false}
+              mountScope="linked-items"
+            />
+          </section>
+        ) : null}
         {body}
       </div>
     </>
@@ -552,6 +606,7 @@ function useIssueRowMenu(
   threadRef: ScopedThreadRef,
   composerDraftTarget: ScopedThreadRef | DraftId,
 ) {
+  const gt = useGT();
   const { start } = useStartIssueThread();
   const thread = useThreadShell(threadRef);
   const canOperate = useEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope);
@@ -565,20 +620,22 @@ function useIssueRowMenu(
     const linked = (thread?.issues ?? []).some((existing) => threadIssueKeysEqual(existing, key));
     const sameEnvironment = row.environmentId === threadRef.environmentId;
     const items: ContextMenuItem<IssueRowMenuAction>[] = [
-      { id: "start-thread", label: "Start thread", icon: "message-square-plus" },
-      { id: "add-to-composer", label: "Add to composer" },
+      { id: "start-thread", label: gt("Start thread"), icon: "message-square-plus" },
+      { id: "add-to-composer", label: gt("Add to composer") },
       ...(thread !== null && canOperate && sameEnvironment
         ? [
             {
               id: "link" as const,
-              label: linked ? "Unlink from this thread" : "Link to this thread",
+              label: linked ? gt("Unlink from this thread") : gt("Link to this thread"),
             },
           ]
         : []),
-      { id: "copy-link", label: "Copy link", icon: "copy", separatorBefore: true },
+      { id: "copy-link", label: gt("Copy link"), icon: "copy", separatorBefore: true },
       {
         id: "open-external",
-        label: `Open on ${issueTrackerPresentation(row.tracker).providerName}`,
+        label: gt("Open on {provider}", {
+          provider: issueTrackerPresentation(row.tracker).providerName,
+        }),
       },
     ];
     const action = await api.contextMenu.show(items, position).catch(() => null);
@@ -605,19 +662,21 @@ function useIssueRowMenu(
         if (result._tag === "Failure") {
           toastManager.add({
             type: "error",
-            title: linked ? "Could not unlink the issue" : "Could not link the issue",
+            title: linked ? gt("Could not unlink the issue") : gt("Could not link the issue"),
           });
         }
         return;
       }
       case "copy-link":
-        return writeTextToClipboard(row.url, "link").catch(() =>
-          toastManager.add({ type: "error", title: "Could not copy the link" }),
-        );
+        return writeTextToClipboard(row.url, {
+          target: "issue link",
+          unavailableMessage: msg("Clipboard API is unavailable while copying the issue link."),
+          failureMessage: msg("Failed to copy the issue link to the clipboard."),
+        }).catch(() => toastManager.add({ type: "error", title: gt("Could not copy the link") }));
       case "open-external":
         return api.shell
           .openExternal(row.url)
-          .catch(() => toastManager.add({ type: "error", title: "Could not open the link" }));
+          .catch(() => toastManager.add({ type: "error", title: gt("Could not open the link") }));
     }
   };
 }

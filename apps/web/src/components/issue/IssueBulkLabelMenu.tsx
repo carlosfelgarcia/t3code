@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentIssueEntry } from "@t3tools/client-runtime/issue-list";
 import { issueEntryKey } from "@t3tools/client-runtime/state/issues";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { T, useGT } from "gt-react";
 import { TagIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -25,6 +26,7 @@ export function IssueBulkLabelMenu({
   environmentId: EnvironmentId;
   rows: ReadonlyArray<EnvironmentIssueEntry>;
 }) {
+  const gt = useGT();
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const canWrite = useAtomValue(issueEnvironment.update.permissionAtom(environmentId));
@@ -82,15 +84,26 @@ export function IssueBulkLabelMenu({
     if (failed > 0) {
       toastManager.add({
         type: "error",
-        title: `Could not ${mode} "${label}" on ${failed} of ${writes.length} issues`,
+        title:
+          mode === "add"
+            ? gt('Could not add "{label}" on {failed} of {total} issues', {
+                label,
+                failed,
+                total: writes.length,
+              })
+            : gt('Could not remove "{label}" on {failed} of {total} issues', {
+                label,
+                failed,
+                total: writes.length,
+              }),
       });
     }
   };
 
   const disabledReason = !canWrite
-    ? "This connection cannot change issues."
+    ? gt("This connection cannot change issues.")
     : !oneScope
-      ? "Select issues from one repository to label them together."
+      ? gt("Select issues from one repository to label them together.")
       : null;
   const labels = candidatesQuery.data?.labels ?? [];
 
@@ -107,14 +120,18 @@ export function IssueBulkLabelMenu({
         }
       >
         <TagIcon aria-hidden />
-        Labels
+        <T>Labels</T>
       </MenuTrigger>
       <MenuPopup align="start" className="max-h-80">
         {candidatesQuery.isPending && candidatesQuery.data === null ? (
-          <p className="px-2 py-1.5 text-xs text-muted-foreground">Loading labels…</p>
+          <p className="px-2 py-1.5 text-xs text-muted-foreground">
+            <T>Loading labels…</T>
+          </p>
         ) : labels.length === 0 ? (
           <p className="px-2 py-1.5 text-xs text-muted-foreground">
-            {candidatesQuery.error === null ? "This tracker has no labels." : candidatesQuery.error}
+            {candidatesQuery.error === null
+              ? gt("This tracker has no labels.")
+              : candidatesQuery.error}
           </p>
         ) : (
           labels.map((label) => {
@@ -127,7 +144,9 @@ export function IssueBulkLabelMenu({
               >
                 <span className="min-w-0 flex-1 truncate">{label.name}</span>
                 {coverage === "some" ? (
-                  <span className="text-xs text-muted-foreground">some</span>
+                  <span className="text-xs text-muted-foreground">
+                    {gt("some", { $context: "some of the selected issues have this label" })}
+                  </span>
                 ) : null}
               </MenuCheckboxItem>
             );

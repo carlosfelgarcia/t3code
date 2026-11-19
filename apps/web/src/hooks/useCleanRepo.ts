@@ -6,8 +6,10 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { useNavigate } from "@tanstack/react-router";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
+import { msg } from "gt-react";
 
 import { useEnvironmentSettings } from "~/hooks/useSettings";
+import { m } from "~/i18n/messages";
 import { newMessageId, newThreadId } from "~/lib/utils";
 import { resolveProjectDefaultProviderModelSelection } from "~/providerInstances";
 import { useEnvironmentProviders } from "~/state/environments";
@@ -38,7 +40,9 @@ export function useCleanRepo(project: EnvironmentProject) {
       resolved.defaultModelSelection ??
       resolveProjectDefaultProviderModelSelection(providers, settings, project.id);
     if (modelSelection === null) {
-      throw new Error("No model is available on this environment. Enable a provider first.");
+      throw new Error(
+        m(msg("No model is available on this environment. Enable a provider first.")),
+      );
     }
     const threadId = newThreadId();
     const runtimeMode = resolved.defaultRuntimeMode ?? DEFAULT_RUNTIME_MODE;
@@ -60,7 +64,9 @@ export function useCleanRepo(project: EnvironmentProject) {
           // No branch or worktree path launches in the project's main checkout.
           createThread: {
             projectId: project.id,
-            title: "Clean repo",
+            title: m(
+              msg("Clean repo", { $context: "title of a thread that cleans up the repository" }),
+            ),
             modelSelection,
             runtimeMode,
             interactionMode: "default",

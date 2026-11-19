@@ -1,5 +1,6 @@
 import type { EnvironmentIssueEntry } from "@t3tools/client-runtime/issue-list";
 import type { IssueRelationSummary } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 import { BanIcon, ListChecksIcon, MessageSquareIcon } from "lucide-react";
 import { memo } from "react";
 
@@ -30,6 +31,7 @@ function IssueRowImpl({
   showScope,
   showTracker,
   environmentLabel,
+  wrapLabels = false,
   onSelect,
 }: {
   entry: EnvironmentIssueEntry;
@@ -40,6 +42,8 @@ function IssueRowImpl({
   showTracker: boolean;
   /** Names the server this row was read from, where the list spans more than one. */
   environmentLabel?: string | undefined;
+  /** Every label on its own wrapping line, for narrow lists where the meta line has no room. */
+  wrapLabels?: boolean;
   onSelect: (entry: IssueRowTarget) => void;
 }) {
   const tracker = issueTrackerPresentation(entry.tracker);
@@ -57,57 +61,68 @@ function IssueRowImpl({
         className={cn(PULL_REQUEST_ROW_CLASS, "@container/issue-row-meta px-3 py-2.5")}
       >
         <IssueStateGlyph state={entry.state} />
-        <PullRequestRowLines
-          number={<span className={PULL_REQUEST_ROW_NUMBER_CLASS}>{entry.displayKey}</span>}
-          title={entry.title}
-          status={
-            <>
-              {entry.assignees.length > 0 ? (
-                <span className="flex items-center -space-x-1">
-                  {entry.assignees.slice(0, 3).map((assignee) => (
-                    <PullRequestActorAvatar
-                      key={assignee.login}
-                      actor={assignee}
-                      className="ring-1 ring-background"
-                    />
-                  ))}
-                </span>
-              ) : null}
-              {entry.commentCount > 0 ? (
-                <span className="inline-flex items-center gap-0.5 tabular-nums">
-                  <MessageSquareIcon aria-hidden className="size-3" />
-                  {entry.commentCount}
-                </span>
-              ) : null}
-            </>
-          }
-          meta={
-            <>
-              <PullRequestRowAuthor actor={entry.author} />
-              {entry.relationSummary ? <IssueRowRelations summary={entry.relationSummary} /> : null}
-              {showTracker ? (
-                <span className="inline-flex shrink-0 items-center gap-1">
-                  <tracker.Icon aria-hidden className="size-3" />
-                  <span className="sr-only">{tracker.providerName}</span>
-                </span>
-              ) : null}
-              {showScope ? <span className="truncate">{entry.scope}</span> : null}
-              {environmentLabel ? <span className="truncate">{environmentLabel}</span> : null}
-              {entry.labels.length > 0 ? (
-                <span className="hidden min-w-0 items-center gap-1 @xl/issue-row-meta:flex">
-                  {entry.labels.slice(0, 3).map((label, index) => (
-                    <PullRequestLabelChip key={label.name} label={label}>
-                      {index === 2 && entry.labels.length > 3 ? (
-                        <span className="shrink-0">+{entry.labels.length - 3}</span>
-                      ) : null}
-                    </PullRequestLabelChip>
-                  ))}
-                </span>
-              ) : null}
-            </>
-          }
-          updatedAt={entry.updatedAt}
-        />
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <PullRequestRowLines
+            number={<span className={PULL_REQUEST_ROW_NUMBER_CLASS}>{entry.displayKey}</span>}
+            title={entry.title}
+            status={
+              <>
+                {entry.assignees.length > 0 ? (
+                  <span className="flex items-center -space-x-1">
+                    {entry.assignees.slice(0, 3).map((assignee) => (
+                      <PullRequestActorAvatar
+                        key={assignee.login}
+                        actor={assignee}
+                        className="ring-1 ring-background"
+                      />
+                    ))}
+                  </span>
+                ) : null}
+                {entry.commentCount > 0 ? (
+                  <span className="inline-flex items-center gap-0.5 tabular-nums">
+                    <MessageSquareIcon aria-hidden className="size-3" />
+                    {entry.commentCount}
+                  </span>
+                ) : null}
+              </>
+            }
+            meta={
+              <>
+                <PullRequestRowAuthor actor={entry.author} />
+                {entry.relationSummary ? (
+                  <IssueRowRelations summary={entry.relationSummary} />
+                ) : null}
+                {showTracker ? (
+                  <span className="inline-flex shrink-0 items-center gap-1">
+                    <tracker.Icon aria-hidden className="size-3" />
+                    <span className="sr-only">{tracker.providerName}</span>
+                  </span>
+                ) : null}
+                {showScope ? <span className="truncate">{entry.scope}</span> : null}
+                {environmentLabel ? <span className="truncate">{environmentLabel}</span> : null}
+                {!wrapLabels && entry.labels.length > 0 ? (
+                  <span className="hidden min-w-0 items-center gap-1 @xl/issue-row-meta:flex">
+                    {entry.labels.slice(0, 3).map((label, index) => (
+                      <PullRequestLabelChip key={label.name} label={label}>
+                        {index === 2 && entry.labels.length > 3 ? (
+                          <span className="shrink-0">+{entry.labels.length - 3}</span>
+                        ) : null}
+                      </PullRequestLabelChip>
+                    ))}
+                  </span>
+                ) : null}
+              </>
+            }
+            updatedAt={entry.updatedAt}
+          />
+          {wrapLabels && entry.labels.length > 0 ? (
+            <span className="flex flex-wrap gap-1">
+              {entry.labels.map((label) => (
+                <PullRequestLabelChip key={label.name} label={label} />
+              ))}
+            </span>
+          ) : null}
+        </span>
       </button>
     </div>
   );
@@ -118,6 +133,7 @@ export const IssueRow = memo(IssueRowImpl);
 const ROW_BLOCKERS_SHOWN = 3;
 
 function IssueRowRelations({ summary }: { summary: IssueRelationSummary }) {
+  const gt = useGT();
   const count = summary.openBlockerCount;
   const named = summary.openBlockers.slice(0, ROW_BLOCKERS_SHOWN);
   const hidden = count - named.length;
@@ -131,8 +147,18 @@ function IssueRowRelations({ summary }: { summary: IssueRelationSummary }) {
             <BanIcon aria-hidden className="size-3 shrink-0" />
             <span className="truncate">
               {named.length === 0
-                ? `Blocked by ${count} ${count === 1 ? "issue" : "issues"}`
-                : `Blocked by ${named.map((blocker) => blocker.displayKey).join(", ")}${hidden > 0 ? ` +${hidden}` : ""}`}
+                ? gt(
+                    "{count, plural, one {Blocked by {count} issue} other {Blocked by {count} issues}}",
+                    { count },
+                  )
+                : hidden > 0
+                  ? gt("Blocked by {keys} +{hidden}", {
+                      keys: named.map((blocker) => blocker.displayKey).join(", "),
+                      hidden,
+                    })
+                  : gt("Blocked by {keys}", {
+                      keys: named.map((blocker) => blocker.displayKey).join(", "),
+                    })}
             </span>
           </TooltipTrigger>
           <TooltipPopup>
@@ -144,8 +170,10 @@ function IssueRowRelations({ summary }: { summary: IssueRelationSummary }) {
             {count > summary.openBlockers.length ? (
               <div>
                 {summary.openBlockers.length === 0
-                  ? `${count} open ${count === 1 ? "issue" : "issues"}`
-                  : `and ${count - summary.openBlockers.length} more`}
+                  ? gt("{count, plural, one {{count} open issue} other {{count} open issues}}", {
+                      count,
+                    })
+                  : gt("and {count} more", { count: count - summary.openBlockers.length })}
               </div>
             ) : null}
           </TooltipPopup>
@@ -160,8 +188,10 @@ function IssueRowRelations({ summary }: { summary: IssueRelationSummary }) {
             </span>
           </TooltipTrigger>
           <TooltipPopup>
-            {summary.subIssuesCompleted} of {summary.subIssuesTotal}{" "}
-            {summary.subIssuesTotal === 1 ? "sub-issue" : "sub-issues"} completed
+            {gt(
+              "{total, plural, one {{completed} of {total} sub-issue completed} other {{completed} of {total} sub-issues completed}}",
+              { completed: summary.subIssuesCompleted, total: summary.subIssuesTotal },
+            )}
           </TooltipPopup>
         </Tooltip>
       ) : null}

@@ -1,4 +1,5 @@
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import { T, useGT } from "gt-react";
 import { MessageSquarePlusIcon, TextCursorInputIcon } from "lucide-react";
 
 import type { DraftId } from "~/composerDraftStore";
@@ -17,6 +18,7 @@ export function IssueThreadActions({
   issue: IssueThreadSubject;
   composerDraftTarget?: ScopedThreadRef | DraftId | undefined;
 }) {
+  const gt = useGT();
   const { start, opening } = useStartIssueThread();
   return (
     <>
@@ -27,14 +29,16 @@ export function IssueThreadActions({
               <Button
                 size="icon-xs"
                 variant="ghost"
-                aria-label="Add to composer"
+                aria-label={gt("Add to composer")}
                 onClick={() => addIssueToComposer(composerDraftTarget, issue)}
               />
             }
           >
             <TextCursorInputIcon aria-hidden className="size-3.5" />
           </TooltipTrigger>
-          <TooltipPopup>Add a reference to this issue to the composer</TooltipPopup>
+          <TooltipPopup>
+            <T>Add a reference to this issue to the composer</T>
+          </TooltipPopup>
         </Tooltip>
       )}
       <Tooltip>
@@ -43,7 +47,7 @@ export function IssueThreadActions({
             <Button
               size="icon-xs"
               variant="ghost"
-              aria-label="Start thread"
+              aria-label={gt("Start thread")}
               disabled={opening}
               onClick={() => void start(environmentId, issue)}
             />
@@ -51,7 +55,9 @@ export function IssueThreadActions({
         >
           <MessageSquarePlusIcon aria-hidden className="size-3.5" />
         </TooltipTrigger>
-        <TooltipPopup>Start a thread on this issue, linked once you send</TooltipPopup>
+        <TooltipPopup>
+          <T>Start a thread on this issue, linked once you send</T>
+        </TooltipPopup>
       </Tooltip>
     </>
   );

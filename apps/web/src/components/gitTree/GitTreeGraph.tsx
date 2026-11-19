@@ -1,5 +1,6 @@
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import type { VcsCommitGraphCommit } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 import { TagIcon } from "lucide-react";
 import { memo, type Ref } from "react";
 
@@ -63,6 +64,7 @@ const GitTreeGraphRow = memo(function GitTreeGraphRow({
   /** The checked-out branch, or null for a detached HEAD. */
   headBranch: string | null;
 }) {
+  const gt = useGT();
   const { commit, row } = item;
   const svgWidth = Math.max(width, 1) * LANE_WIDTH;
   const branches = head ? commit.refs.filter((ref) => ref !== headBranch) : commit.refs;
@@ -103,7 +105,9 @@ const GitTreeGraphRow = memo(function GitTreeGraphRow({
       </svg>
       {head ? (
         <Badge className="shrink-0">
-          {headBranch === null ? "HEAD (detached)" : `HEAD → ${headBranch}`}
+          {headBranch === null
+            ? gt("HEAD (detached)")
+            : gt("HEAD → {branch}", { branch: headBranch })}
         </Badge>
       ) : null}
       {branches.map((ref) => (
@@ -121,7 +125,7 @@ const GitTreeGraphRow = memo(function GitTreeGraphRow({
         <Badge
           variant="info"
           className="shrink-0"
-          title={`Merged pull request ${pullRequest.label}`}
+          title={gt("Merged pull request {label}", { label: pullRequest.label })}
         >
           <PullRequestGlyph.merged aria-hidden />
           {pullRequest.label}

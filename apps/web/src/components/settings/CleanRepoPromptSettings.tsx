@@ -1,10 +1,11 @@
 import { DEFAULT_CLEAN_REPO_PROMPT } from "@t3tools/contracts";
+import { useGT } from "gt-react";
 import { useRef } from "react";
 
 import { Textarea } from "../ui/textarea";
 import { SettingsRow, SettingResetButton } from "./settingsLayout";
 import { useSettingsScope } from "./SettingsScopeContext";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 import {
   useScopedSettings,
   useScopedSettingsMixed,
@@ -12,23 +13,25 @@ import {
 } from "./useScopedSettings";
 
 export function CleanRepoPromptSettings() {
+  const gt = useGT();
   const settings = useScopedSettings();
   const { targets } = useSettingsScope();
   const scopeKey = targets.map((target) => `${target.environmentId}:${target.projectId}`).join(",");
   const edited = useRef(false);
   const updateSettings = useUpdateScopedSettings();
   const mixed = useScopedSettingsMixed(["cleanRepoPrompt"]);
+  const setting = useSearchableSetting();
 
   return (
     <SettingsRow
       serverScoped
       settingKeys={["cleanRepoPrompt"]}
-      {...searchableSetting("clean-repo-prompt")}
-      description="The message Clean Repo sends to its agent. Clear it to use the default."
+      {...setting("clean-repo-prompt")}
+      description={gt("The message Clean Repo sends to its agent. Clear it to use the default.")}
       resetAction={
         mixed || settings.cleanRepoPrompt !== "" ? (
           <SettingResetButton
-            label="Clean Repo prompt"
+            ariaLabel={gt("Reset Clean Repo prompt to default")}
             onClick={() => updateSettings({ cleanRepoPrompt: "" })}
           />
         ) : null
@@ -37,7 +40,7 @@ export function CleanRepoPromptSettings() {
       <div className="mt-3 max-w-2xl pb-3.5">
         <Textarea
           key={`${scopeKey}:${mixed}:${settings.cleanRepoPrompt}`}
-          aria-label="Clean Repo prompt"
+          aria-label={gt("Clean Repo prompt")}
           onChange={() => {
             edited.current = true;
           }}
@@ -45,7 +48,7 @@ export function CleanRepoPromptSettings() {
           defaultValue={mixed ? "" : settings.cleanRepoPrompt || DEFAULT_CLEAN_REPO_PROMPT}
           placeholder={
             mixed
-              ? "Mixed. Enter a prompt to apply to all selected targets."
+              ? gt("Mixed. Enter a prompt to apply to all selected targets.")
               : DEFAULT_CLEAN_REPO_PROMPT
           }
           onBlur={(event) => {
