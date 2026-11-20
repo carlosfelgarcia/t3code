@@ -112,6 +112,7 @@ const SORT_OPTIONS = [
 ] as const satisfies ReadonlyArray<PullRequestFilterOption<IssueListSort>>;
 
 const PAGE_SIZE = 50;
+const NO_HIDDEN_PROJECTS: ReadonlySet<string> = new Set();
 
 /** The panel opens on open issues, newest first, unlike the page's recently-updated default. */
 const DEFAULT_FILTERS: IssueListPreferences = { who: "all", status: "open", order: "created" };
@@ -323,10 +324,12 @@ function IssueList({
     }));
   const clearSelection = () => setSelection({ keys: new Set(), anchor: null });
   // The panel lists one project, so label and assignee choices come from it alone.
-  const filterScopes = issueFilterScopes(held, projects, {
-    environmentId,
-    projectId: project.id,
-  });
+  const filterScopes = issueFilterScopes(
+    held,
+    projects.filter(
+      (candidate) => candidate.environmentId === environmentId && candidate.id === project.id,
+    ),
+  );
 
   const activeSurface = useRightPanelStore((state) =>
     selectActiveRightPanelSurface(state.byThreadKey, threadRef),
@@ -532,8 +535,8 @@ function IssueList({
           onAssignee={(assignee) => update({ assignee })}
           // The sibling picker chooses the repository; the panel never lists several projects.
           projects={[]}
-          project={undefined}
-          onProject={() => undefined}
+          hiddenProjects={NO_HIDDEN_PROJECTS}
+          onHiddenProjects={() => undefined}
         />
         <Button
           size="icon"
