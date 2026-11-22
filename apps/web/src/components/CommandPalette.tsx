@@ -1751,18 +1751,17 @@ function OpenCommandPaletteDialog(props: {
     },
   });
 
-  const activeThreadProject =
-    activeThread === null
-      ? undefined
-      : projects.find(
-          (project) =>
-            project.environmentId === activeThread.environmentId &&
-            project.id === activeThread.projectId &&
-            project.isScratch !== true,
-        );
+  const activeThreadProject = activeThread
+    ? projects.find(
+        (project) =>
+          project.environmentId === activeThread.environmentId &&
+          project.id === activeThread.projectId &&
+          project.isScratch !== true,
+      )
+    : undefined;
   const activeThreadIssuesSupported =
     activeThreadServerConfig?.environment.capabilities.issues === true;
-  if (activeThread !== null && activeThreadProject !== undefined) {
+  if (activeThread && activeThreadProject !== undefined) {
     const threadRef = scopeThreadRef(activeThread.environmentId, activeThread.id);
     if (activeThreadIssuesSupported) {
       actionItems.push({
@@ -2428,7 +2427,7 @@ function OpenCommandPaletteDialog(props: {
           cloneDirectoryName: pinnedCloneDirectoryName,
           caseSensitive: !isWindowsPlatform(browseEnvironmentPlatform),
         })
-      : appendBrowsePathSegment(query, name);
+      : appendBrowsePathSegment(browsePath.directoryPath, name);
     await browseNavigation.run(
       () => prefetchBrowsePath(getBrowseDirectoryPath(nextQuery)),
       () => {
@@ -2846,7 +2845,7 @@ function OpenCommandPaletteDialog(props: {
         void browseTo(completion.name);
       } else if (completion && !pinnedCloneDirectoryName) {
         setHighlightedItemValue(null);
-        setQuery(`${getBrowseDirectoryPath(query)}${completion.name}`);
+        setQuery(`${browsePath.directoryPath}${completion.name}`);
       }
       return;
     }
