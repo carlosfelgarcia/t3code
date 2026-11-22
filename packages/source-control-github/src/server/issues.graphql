@@ -232,6 +232,7 @@ query IssueDetail($owner: String!, $name: String!, $number: Int!) {
               }
               ... on Issue {
                 number
+                url
                 repository {
                   nameWithOwner
                 }
@@ -267,6 +268,16 @@ query IssueComments($owner: String!, $name: String!, $number: Int!, $cursor: Str
           ...Reactions
         }
       }
+    }
+  }
+}
+
+query IssueLinkMetadata($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    issue(number: $number) {
+      number
+      title
+      url
     }
   }
 }
