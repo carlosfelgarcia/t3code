@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
+import * as Schema from "effect/Schema";
 import { GraphQLClient, GraphQLClientError, GraphQLGroup } from "effect/graphql";
 import {
   IssueTrackerKind,
@@ -26,6 +27,8 @@ import { AddReaction, RemoveReaction } from "./pullRequestMutations.graphql.ts";
 import { gitHubReactionContent } from "./gitHubPullRequestJson.ts";
 import {
   ISSUE_STATES,
+  planningStatusesOf,
+  toPlanningState,
   decodeCreatedIssueJson,
   decodeIssueMetadataJson,
   toIssueCandidates,
@@ -48,6 +51,18 @@ const CAPABILITIES: IssueCapabilities = {
   events: true,
   search: true,
 };
+
+/** Issue statuses are a github.com preview; Enterprise Server rejects a query that names them. */
+const asksStatuses = (host: string) => host.toLowerCase() === "github.com";
+
+const isResponseError = Schema.is(GitHubRequestPolicy.GitHubApiResponseError);
+
+/** GitHub refused the status fields themselves, as it may for an account the preview skips. */
+const statusesRefused = (error: IssueTrackerError) =>
+  isResponseError(error.cause) &&
+  (error.cause.githubErrors ?? []).some((message) =>
+    /planningStatus|viewerCanSetStatus|\bstatus\b/i.test(message),
+  );
 
 const REPOSITORY = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+$/;
 
@@ -196,6 +211,22 @@ export const make = Effect.gen(function* () {
     return { ...target, id: found.id, state: found.state, stateReason: found.stateReason };
   });
 
+  /** The repository's statuses and the issue's, or null on a host without them. */
+  const issueStatuses = Effect.fn("GitHubIssueTracker.issueStatuses")(function* (
+    input: { readonly host: string },
+    owner: string,
+    name: string,
+    number: number,
+    operation: string,
+  ) {
+    if (!asksStatuses(input.host)) return null;
+    return yield* client.IssueStatuses({ owner, name, number }).pipe(
+      graphql(input.host, operation),
+      Effect.map((result) => result.repository),
+      Effect.catchIf(statusesRefused, () => Effect.succeed(null)),
+    );
+  });
+
   // As sets: GitHub applies a name asked for twice once.
   const sameNames = (wanted: ReadonlyArray<string>, applied: ReadonlyArray<string>) => {
     const names = new Set(wanted.map((name) => name.trim().toLowerCase()));
@@ -216,13 +247,18 @@ export const make = Effect.gen(function* () {
 
     listIssues: Effect.fn("GitHubIssueTracker.listIssues")(function* (input) {
       yield* repository(input.scope, "listIssues");
-      const result = yield* client
-        .IssueSearch({
-          q: searchQuery(input),
-          cursor: input.cursor,
-          rows: Math.min(Math.max(Math.trunc(input.limit), 1), 100),
-        })
-        .pipe(graphql(input.host, "listIssues"));
+      const variables = {
+        q: searchQuery(input),
+        cursor: input.cursor,
+        rows: Math.min(Math.max(Math.trunc(input.limit), 1), 100),
+      };
+      const legacy = client.IssueSearch(variables).pipe(graphql(input.host, "listIssues"));
+      const result = yield* asksStatuses(input.host)
+        ? client.IssueSearchWithStatus(variables).pipe(
+            graphql(input.host, "listIssues"),
+            Effect.catchIf(statusesRefused, () => legacy),
+          )
+        : legacy;
       const ids = (result.search.nodes ?? []).flatMap((node) =>
         node?.__typename === "Issue" ? [node.id] : [],
       );
@@ -239,16 +275,17 @@ export const make = Effect.gen(function* () {
 
     getIssue: Effect.fn("GitHubIssueTracker.getIssue")(function* (input) {
       const { owner, name, number } = yield* issue(input, "getIssue");
-      const [result, relatedIssues] = yield* Effect.all(
+      const [result, statusRead, relatedIssues] = yield* Effect.all(
         [
           client.IssueDetail({ owner, name, number }).pipe(graphql(input.host, "getIssue")),
+          issueStatuses(input, owner, name, number, "getIssue"),
           client.IssueRelations({ owner, name, number }).pipe(
             graphql(input.host, "getIssue"),
             Effect.map((found) => toIssueRelations(`${owner}/${name}`, found)),
             Effect.orElseSucceed(() => undefined),
           ),
         ],
-        { concurrency: 2 },
+        { concurrency: 3 },
       );
       const repository = result.repository;
       const raw = repository?.issue;
@@ -337,19 +374,22 @@ export const make = Effect.gen(function* () {
           allClosing.push(...(closing.nodes ?? []));
         }
       }
-      const detail = toIssueDetail({
-        ...result,
-        repository: {
-          ...repository,
-          issue: {
-            ...raw,
-            closedByPullRequestsReferences:
-              raw.closedByPullRequestsReferences === null
-                ? null
-                : { ...raw.closedByPullRequestsReferences, nodes: allClosing },
+      const detail = toIssueDetail(
+        {
+          ...result,
+          repository: {
+            ...repository,
+            issue: {
+              ...raw,
+              closedByPullRequestsReferences:
+                raw.closedByPullRequestsReferences === null
+                  ? null
+                  : { ...raw.closedByPullRequestsReferences, nodes: allClosing },
+            },
           },
         },
-      });
+        statusRead,
+      );
       if (detail === null) return yield* notFound("getIssue");
       return {
         ...detail,
@@ -467,8 +507,28 @@ export const make = Effect.gen(function* () {
     }),
 
     setState: Effect.fn("GitHubIssueTracker.setState")(function* (input) {
-      const { path, state, stateReason } = yield* verifiedIssue(input, "setState");
-      const wanted = ISSUE_STATES.find((candidate) => candidate.name === input.state);
+      const { path, id, state, stateReason, owner, name, number } = yield* verifiedIssue(
+        input,
+        "setState",
+      );
+      const statuses = planningStatusesOf(
+        (yield* issueStatuses(input, owner, name, number, "setState"))?.planningStatuses,
+      );
+      const status = statuses.find((candidate) => candidate.name === input.state);
+      // Closing as a duplicate through a status needs the original issue, which nothing here
+      // names; closing it over REST leaves GitHub to pick the duplicate status.
+      if (status !== undefined && status.category.key !== "duplicate") {
+        return yield* client
+          .SetIssueStatus({ issueId: id, statusId: status.id })
+          .pipe(graphql(input.host, "setState"), Effect.asVoid);
+      }
+      if (status === undefined && statuses.length > 0) {
+        return yield* invalid("setState", `This repository has no "${input.state}" issue status.`);
+      }
+      const wanted =
+        status === undefined
+          ? ISSUE_STATES.find((candidate) => candidate.name === input.state)
+          : toPlanningState(status);
       if (wanted === undefined) {
         return yield* invalid("setState", `A GitHub issue has no "${input.state}" state.`);
       }

@@ -4,10 +4,10 @@ How the engineering skills should consume this repo's domain documentation when 
 
 ## Before exploring, read these
 
-- **`docs/internals/glossary.md`**: the single shared glossary for the whole monorepo.
-- **`docs/internals/overview.md`**, plus any other `docs/internals/*.md` page that touches the area you're about to work in. These hold the repo's architectural decisions and cross-component constraints; treat them as this repo's ADRs.
+- **`docs/internals/00_glossary.md`**: the single shared glossary for the whole monorepo.
+- **`docs/internals/01_architecture.md`**, plus any other `docs/internals/*.md` page that touches the area you're about to work in. These hold the repo's architectural decisions and cross-component constraints; treat them as this repo's ADRs.
 
-There is no root `GLOSSARY.md`, `GLOSSARY-MAP.md`, or `docs/adr/`, and none should be created. `/domain-modeling` adds terms to `docs/internals/glossary.md` and records decisions in the relevant `docs/internals/` page, following the Documentation rules in `AGENTS.md`.
+There is no root `GLOSSARY.md`, `GLOSSARY-MAP.md`, or `docs/adr/`, and none should be created. `/domain-modeling` adds terms to `docs/internals/00_glossary.md` and records decisions in the relevant `docs/internals/` page, following the Documentation rules in `AGENTS.md`.
 
 ## Use the glossary's vocabulary
 
@@ -19,4 +19,4 @@ If the concept you need isn't in the glossary yet, either you're inventing langu
 
 If your output contradicts a decision recorded in `docs/internals/`, surface it explicitly rather than silently overriding:
 
-> _Contradicts `docs/internals/overview.md` (orchestration stays pure), but worth reopening because…_
+> _Contradicts `docs/internals/01_architecture.md` (orchestration stays pure), but worth reopening because…_
