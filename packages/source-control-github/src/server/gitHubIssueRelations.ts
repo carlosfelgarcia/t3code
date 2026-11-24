@@ -13,7 +13,7 @@ function toRelation(scope: string, node: Relations.IssueRelationNode): IssueRela
     displayKey: sameScope ? `#${node.number}` : `${nodeScope}#${node.number}`,
     title: node.title,
     url: node.url,
-    state: toIssueState(node.state, node.stateReason),
+    state: toIssueState(node.state, node.stateReason, null),
   };
 }
 
