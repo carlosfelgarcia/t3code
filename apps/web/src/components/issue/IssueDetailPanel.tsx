@@ -36,7 +36,7 @@ import {
   UsersIcon,
 } from "lucide-react";
 import { msg, T, useGT, useMessages, Var } from "gt-react";
-import { useContext, useState, type ReactNode } from "react";
+import { useContext, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { RefreshIcon } from "~/components/ui/refresh-icon";
 import { m } from "~/i18n/messages";
@@ -52,7 +52,9 @@ import { Button, InlineButton } from "../ui/button";
 import { Input } from "../ui/input";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { cn } from "~/lib/utils";
+import { LRUCache } from "~/lib/lruCache";
 import { PullRequestMetaRow, PullRequestSection } from "../pullRequest/PullRequestSummaryTab";
+import { holdScrollTop } from "../pullRequest/holdLinkedNodeInView";
 import { toastManager } from "../ui/toast";
 import type { DraftId } from "~/composerDraftStore";
 import { IssueThreadActions } from "./IssueThreadActions";
@@ -61,7 +63,10 @@ import { PullRequestCandidatePicker } from "../pullRequest/PullRequestCandidateP
 import { PullRequestCommentBody } from "../pullRequest/PullRequestCommentBody";
 import { PullRequestDetailTitleRow } from "../pullRequest/PullRequestDetailLayout";
 import { PullRequestEditButton } from "../pullRequest/PullRequestEditButton";
-import { PullRequestMarkdown } from "../pullRequest/PullRequestMarkdown";
+import {
+  PullRequestMarkdown,
+  PullRequestMarkdownPanelContext,
+} from "../pullRequest/PullRequestMarkdown";
 import { PullRequestMarkdownEditor } from "../pullRequest/PullRequestMarkdownEditor";
 import { readableFailure } from "../pullRequest/pullRequestDetail.logic";
 import { pullRequestLabelColor } from "../pullRequest/pullRequestList.logic";
@@ -413,6 +418,8 @@ function IssueEventText({
   );
 }
 
+const issueScrollPositions = new LRUCache<number>(128, 64 * 1024);
+
 export function IssueDetailPanel({
   environmentId,
   reference,
@@ -455,6 +462,31 @@ export function IssueDetailPanel({
   const [titleDraft, setTitleDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [changingState, setChangingState] = useState(false);
+  const listPanelRef = useContext(PullRequestMarkdownPanelContext);
+  const panelRef = threadRef ?? listPanelRef;
+  const scrollKey =
+    detail === null
+      ? null
+      : JSON.stringify([
+          panelRef.environmentId,
+          panelRef.threadId,
+          environmentId,
+          reference.projectId,
+          detail.url,
+        ]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const restoringScroll = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores the issue scroller before paint, including when detail loads after a remount
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    if (scrollKey === null || scroller === null) return;
+    const scrollTop = issueScrollPositions.get(scrollKey) ?? 0;
+    if (scrollTop === 0) return;
+    restoringScroll.current = true;
+    return holdScrollTop(scroller, scrollTop, () => {
+      restoringScroll.current = false;
+    });
+  }, [scrollKey]);
 
   if (detail === null) {
     if (detailQuery.error !== null && !detailQuery.isPending) {
@@ -607,6 +639,16 @@ export function IssueDetailPanel({
   return (
     <div className="relative flex h-full min-h-0 flex-col">
       <div
+        ref={scrollRef}
+        onScroll={(event) => {
+          if (scrollKey !== null && !restoringScroll.current) {
+            issueScrollPositions.set(
+              scrollKey,
+              event.currentTarget.scrollTop,
+              8 + scrollKey.length * 2,
+            );
+          }
+        }}
         className={cn(
           "min-h-0 flex-1 overflow-y-auto",
           // Room for the floating composer, so the last comment can scroll clear of it.
